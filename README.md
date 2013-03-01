@@ -1,4 +1,4 @@
 convolutional_coding
 ====================
 
-convolutional coding
+python module for convolutional coding and dictionary learning
