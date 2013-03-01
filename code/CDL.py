@@ -9,6 +9,8 @@ Convolutional Dictionary Learning
 import numpy
 import scipy.sparse
 
+#--- Utility functions          ---#
+
 def separateComplex(X):
     '''
     Separate the real and imaginary components of a matrix
@@ -37,3 +39,31 @@ def combineComplex(Y):
     '''
     d = Y.shape[0] / 2
     return Y[:d] + 1.j * Y[d:]
+
+def sparseDiagonalBlock(D):
+    '''
+    Rearrange a d-by-m matrix D into a sparse d-by-dm matrix Q
+    The i'th d-by-d block of Q = diag(D[:,i])
+    '''
+
+    (d, m)  = D.shape
+    Q       = scipy.sparse.spdiags(D.T, range(0, - d * m, -d), d * m, d)
+    return Q.T
+
+#---                            ---#
+
+
+#--- Regression function        ---#
+#---                            ---#
+
+
+#--- Regularization functions   ---#
+#---                            ---#
+
+
+#--- Encoder loop               ---#
+#---                            ---#
+
+#--- Dictionary loop            ---#
+#---                            ---#
+
