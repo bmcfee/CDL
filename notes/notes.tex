@@ -444,7 +444,7 @@ Assembling all of the pieces, the dictionary learning algorithm is given as \aut
     \item $DX \leftarrow D\trans X,\quad \Delta = \diag(DD\trans)$ \COMMENT{Pre-cache values}
     \item $Z \leftarrow D, \quad \Omega \leftarrow \zero, \quad \rho \leftarrow 1$ \COMMENT{Initialize parameters}
     \FOR{$t = 0, 1, 2, \cdots$}
-    \item $C \leftarrow \text{ridge}(X, D, \rho, DX + \rho(Z - \Omega), (1 + \rho^{-1}\Delta)^{-1})$   \COMMENT{Encode data}
+    \item $C \leftarrow \text{ridge}(D, \rho, DX + \rho(Z - \Omega), (1 + \rho^{-1}\Delta)^{-1})$   \COMMENT{Encode data}
     \item $Z \leftarrow g(C + \Omega)$                                  \COMMENT{Regularize solutions}
     \item $\Omega \leftarrow \Omega + C - Z$                            \COMMENT{Update residual}
     \item Optional: update $\rho$
@@ -452,9 +452,9 @@ Assembling all of the pieces, the dictionary learning algorithm is given as \aut
     \item $S_i \leftarrow \text{reshape}(C_{\cdot i})$ \COMMENT{Reshape each encoding}
     \item $F \leftarrow \text{reshape}(D)$ \COMMENT{columnize the dictionary}
     \item $F_i \leftarrow F,\quad E_i \leftarrow \zero, \quad \rho \leftarrow 1$ \COMMENT{Initialize parameters}
-    \item $SX_i \leftarrow (S^i)\trans X_{\cdot i}, \quad \sigma_i \leftarrow S_i\trans S_i$ \COMMENT{Pre-cache values}
+    \item $SX_i \leftarrow (S^i)\trans X_{\cdot i}, \quad \sigma_i \leftarrow \diag(S_i S_i\trans)$ \COMMENT{Pre-cache values}
     \FOR{$t = 0, 1, 2, \cdots$} 
-    \item $F_i \leftarrow \text{ridge}(X, S_i, \rho, SX_i + \rho(F - E_i), (1 + \rho^{-1}\sigma_i)^{-1})$ \COMMENT{Optimize each point's codebook (parallel)}
+    \item $F_i \leftarrow \text{ridge}(S_i, \rho, SX_i + \rho(F - E_i), (1 + \rho^{-1}\sigma_i)^{-1})$ \COMMENT{Optimize each point's codebook (parallel)}
     \item $F \leftarrow \text{proj}(\sum_i F_i + E_i)$ \COMMENT{Project combined codebooks onto feasible set}
     \item $E_i \leftarrow E_i + F_i - F$ \COMMENT{Update residual}
     \item Optional: update $\rho$

@@ -131,6 +131,24 @@ def blockify(AB, m):
     B = numpy.reshape(AB[(d*m):], (d, m), order='F')
 
     return numpy.vstack( (A, B) )
+
+
+def __ridge(A, rho, b, Z):
+    '''
+    Specialized ridge regression solver for hadamard products.
+
+        X <- 1/rho  *  (I + 1/rho * A' * Z * A) * b
+
+        A:      2d-by-2dm
+        rho:    scalar > 0
+        b:      2dm
+        Z:      2d > 0,  == diag(inv(I + 1/rho * A * A.T))
+
+    '''
+    # b is an ndarray
+    # Q is a sparse matrix
+
+    return (b + (A.T * (Z**(-1) * (A * b)) / rho)) / rho
 #---                            ---#
 
 
