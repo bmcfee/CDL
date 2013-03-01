@@ -47,9 +47,33 @@ def sparseDiagonalBlock(D):
     '''
 
     (d, m)  = D.shape
-    Q       = scipy.sparse.spdiags(D.T, range(0, - d * m, -d), d * m, d)
-    return Q.T
+    A       = scipy.sparse.spdiags(D.T, range(0, - d * m, -d), d * m, d)
+    return A.T
 
+def diagonalBlockRI(D):
+    '''
+    Input:
+        D:  2d-by-m matrix of real+imaginary vectors
+
+    Output:
+        Q:  2d-by-2dm sparse diagonal block matrix [A, -B ; B, A]
+            where A and B are derived from the real and imaginary components
+    '''
+
+    # Get the size of each codeword
+    d = D.shape[0] / 2
+
+    # Block the real component
+    A = sparseDiagonalBlock(D[:d,:])
+
+    # Block the imaginary component
+    B = sparseDiagonalBlock(D[d:,:])
+
+    # Stack horizontally
+    Q1 = scipy.sparse.hstack([A, -B])
+    Q2 = scipy.sparse.hstack([B, A])
+
+    return scipy.sparse.vstack([Q1, Q2])
 #---                            ---#
 
 
