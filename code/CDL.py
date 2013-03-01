@@ -99,6 +99,38 @@ def diagonalBlockRI(D):
     Q2 = scipy.sparse.hstack([B, A])
 
     return scipy.sparse.vstack([Q1, Q2]).tocsr()
+
+def vectorize(X):
+    '''
+    Input:  X 2d-by-m array
+    Output: Y 2dm-by-1 array
+
+    If X = [A ; B], then Y = [vec(A) ; vec(B)]
+    '''
+
+    (d2, m) = X.shape
+
+    d = d2 / 2
+
+    A = numpy.reshape(X[:d,:], (d * m, 1), order='F')
+    B = numpy.reshape(X[d:,:], (d * m, 1), order='F')
+    return numpy.vstack( (A, B) )
+
+def blockify(AB, m):
+    '''
+    Input:  AB  2dm-by-1 array
+            m   number of columns
+    Output: X   2d-by-m array
+    '''
+
+    d2m = AB.shape[0]
+
+    d = d2m / (2 * m)
+
+    A = numpy.reshape(AB[:(d*m)], (d, m), order='F')
+    B = numpy.reshape(AB[(d*m):], (d, m), order='F')
+
+    return numpy.vstack( (A, B) )
 #---                            ---#
 
 
