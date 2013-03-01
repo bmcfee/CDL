@@ -1,0 +1,468 @@
+\documentclass{article}
+\usepackage{fullpage}
+\usepackage{brian}
+
+\DeclareMathOperator{\diagb}{diagb}
+\DeclareMathOperator{\vectorize}{vec}
+\renewcommand{\C}{\ensuremath{\mathbb{C}}}
+
+\title{Shift-invariant sparse coding and dictionary learning}
+\author{Brian McFee}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+
+\subsection{Background: sparse coding}
+
+Traditional sparse coding and dictionary learning is concerned with the following problem:
+\begin{align}
+\min_{D, \{a^i\}} \quad& \frac{1}{n} \sum_{i=1}^n \left(\frac{1}{2} \left\|x^i - Da^i\right\|_2^2 + \lambda \|a^i\|_1\right) \notag\\
+\suchthat \forall k \in [m]:\quad& d_k\trans d_k \leq 1 \label{eq:sparsecoding}
+\end{align}
+
+Here, $x^i\in\R^{d}$ are a sample of $n$ vectors, $D\in\R^{d\times m}$ is the
+\emph{codebook}, and $a^i\in\R^{m}$ is the vector of codeword activations for $x^i$.
+
+Jointly optimizing the codebook $D$ and activations $a^i$ results in a factorization of the $X$ such that
+each $a^i$ is sparse (\eg, depends on $k \ll m$ codewords).
+
+After learning $D$, a new sample point $x \in \R^d$ can be encoded to $A(x) \in \R^m$ by solving a LASSO problem:
+\begin{align}
+A(x) \leftarrow \argmin_{a\in\R^m} \quad & \frac{1}{2} \left\| x - Da\right\|_2^2 + \lambda \|a\|_1.
+\label{eq:sparse:encoding}
+\end{align}
+
+\autoref{eq:sparsecoding} is not jointly convex in $D$ and $a^i$, so a common approach is to alternate between solving for each $a^i$ with a fixed $D$ (via \autoref{eq:sparse:encoding}), 
+and then optimize $D$ for a fixed set of activations.
+
+\subsection{Shift-invariant sparse coding}
+
+In shift-invariant (or convolutional) sparse coding, the goal is similar, but the encoding
+function is now a set of convolutions, rather than dot products:
+\begin{align}
+A_*(x) \leftarrow \argmin_a \frac{1}{2} \left\|x - \sum_{k=1}^m d_k * a_k \right\|_2^2 + \lambda
+\sum_{k=1}^m \|a_k\|_1 \label{eq:sisc}
+\end{align}
+and the joint codebook learning problem is formulated similarly:
+\begin{align}
+\min_{D, \{a^i\}_{i=1}^n} \quad & \frac{1}{n}\sum_{i=1}^n \left( \frac{1}{2} \left\| x^i - \sum_{k=1}^m
+d_k * a^i_k \right\|_2^2 + \lambda \sum_{k=1}^m \left\|a^i_k\right\|_1 \right) \notag\\
+\suchthat \forall k \in [m]:\quad& d_k\trans d_k \leq 1
+\end{align}
+
+Note that $a^i \in \R^{k \times d}$ is a matrix of activations for each data point $x^i$: $a^i_{kt}$ indicates the (convolutional) weight of basis filter $d_k$ at time $t$ when reconstructing $x^i$.
+
+\subsection{Shift-invariant group-sparse coding}
+In audio applications, and especially music, element-wise sparsity may not be appropriate: it is reasonable to expect a song $x$ to repeatedly use a small subset of basis elements.  This
+suggests replacing the $\ell_1$ penalty with a group-sparsity penalty, such as the mixed-norm $\ell_{1,2}$.  This would transform \autoref{eq:sisc} into the following problem:
+\begin{align}
+A_g(x) \leftarrow \argmin_a \frac{1}{2} \left\|x - \sum_{k=1}^m d_k * a_k \right\|_2^2 + \lambda
+\sum_{k=1}^m \|a_k\|_2 \label{eq:sigsc}
+\end{align}
+
+More generally, we can consider arbitrary (convex) regularizers $g(\cdot)$:
+\begin{align}
+A(x) \leftarrow \argmin_a \frac{1}{2} \left\|x - \sum_{k=1}^m d_k * a_k \right\|_2^2 + g(a) \label{eq:arb}
+\end{align}
+
+\subsection{The frequency domain}
+Convolutions are costly in the time domain (as in \autoref{eq:sisc}--\autoref{eq:arb}).  
+We may instead formulate the problem in the frequency domain after applying the 
+discrete Fourier transform $\FT:\R^d\rightarrow\C^d$.\footnote{To simplify notation, we will assume the symmetrically scaled version of the Fourier transform: $\forall_x: \|x\|_2 =
+\|\FT\{x\}\|_2$.}\footnote{In general, I will assume that all signals have been appropriately padded to accommodate
+convolution at the boundaries.}
+
+By Parseval's theorem, linearity of $\FT$, and the convolution theorem, the $\ell_2$ error term of the above problems is preserved:
+\begin{align*}
+\left\|x - \sum_k d_k * a_k\right\|_2 &= \left\|\FT\left\{x - \sum_k d_k * a_k\right\}\right\|_2\\
+                                    &= \left\|\FT\left\{x\right\} - \sum_k \FT\left\{d_k * a_k\right\}\right\|_2\\
+                                    &= \left\|\FT\left\{x\right\} - \sum_k \FT\left\{d_k\right\} \circ \FT\left\{a_k\right\}\right\|_2,
+\end{align*}
+where $\circ$ denotes the Hadamard (element-wise) product.
+
+With a slight abuse of notation to ease readability, we can reformulate \autoref{eq:sigsc}
+entirely in the frequency domain:
+
+\begin{align}
+A_g(X) \leftarrow \argmin_A \frac{1}{2}\left\|X - \sum_{k=1}^m D_k \circ A_k\right\|_2^2 + \lambda \sum_{k=1}^m \|A_k\|_2 \label{eq:csigsc}
+\end{align}
+where $X, D_k, A_k \in \C^d$ now denote the frequency domain representations of the input signal, basis elements, and
+activations.
+
+The following lemma will be handy throughout the remainder of this note.
+\begin{lemma}
+There exist matrices $U, V$ such that $UV = \sum_{k=1}^m D_k \circ A_k$.
+\label{lemma:rearrange}
+\end{lemma}
+\begin{proof}
+$D$ and $A$ can be rearranged as follows:
+\begin{align*}
+U \leftarrow \diagb(D)     &\defeq \left[ \diag(D_1), \diag(D_2), \cdots, \diag(D_m)\right] \in \C^{d \times dm}\\
+V \leftarrow \vectorize(A) &\defeq \left[ A_1\trans, A_2\trans, \cdots, A_m\trans\right]\trans \in \C^{dm}.
+\end{align*}
+\end{proof}
+
+This allows us to reformulate \autoref{eq:csigsc} in a more familiar factorization setting:
+\[
+A_g(X) \leftarrow \argmin_A \frac{1}{2} \left\|X - \diagb(D)\vectorize(A)\right\|_2^2 + g(A).
+\]
+
+Direct optimization on complex variables can be tricky when the function is not complex-differentiable (as is the case for
+$\ell_2^2$ error).  Instead, we will reparameterize in terms of the real and imaginary components:
+\[
+\C^d \ni X \mapsto \left[\begin{array}{r}\Re X \\ \Im X \end{array}\right] \in \R^{2d}
+\]
+
+This leads to the following optimization problem over real-valued $C$:
+\begin{align}
+A(X) \leftarrow \argmin_{C\in\R^{2dm}} \frac{1}{2} \left\| X - QC\right\|_2^2 + g(C),\label{eq:sigsc:realized}
+\end{align}
+where
+\begin{align*}
+C &\defeq \left[\begin{array}{l}\vectorize(\Re A)\\\vectorize(\Im A)\end{array}\right] \in \R^{2dm}\\
+Q &\defeq \left[\begin{array}{rr}\diagb(\Re D) & -\diagb(\Im D)\\ \diagb(\Im D)& \diagb(\Re D)\end{array}\right] \in \R^{2d\times 2dm}.
+\end{align*}
+
+From an optimal $\overline{C}$, the complex-valued activations can be recovered by reshaping the matrix
+\[
+\overline{A} = \left[I_{dm}, \quad j I_{dm}\right] \overline{C} \in \C^{dm}
+\]
+into a $d\times m$ complex-valued activation matrix.
+
+\section{A-step (encoder) via ADMM}
+To solve \autoref{eq:sigsc:realized}, we'll apply the ADMM technique by introducing an auxiliary variable $Z \in \R^{2dm}$ and equality constraint:
+\begin{align}
+\min_{C, Z} \quad & \frac{1}{2} \left\|X - QC\right\|_2^2 + g(Z)\notag\\
+\suchthat \quad & C - Z = 0.\label{eq:sigsc:admm}
+\end{align}
+Now, we will introduce a scaled dual variable $\Omega \in \R^{2dm}$ and scaling parameter $\rho>0$ to form the augmented Lagrangian:
+\begin{align}
+\Ell_\rho(C, Z, \Omega) = \frac{1}{2}\left\|X - QC\right\|_2^2 + \frac{\rho}{2}\left\|C - (Z - \Omega)\right\|_2^2 + g(Z).\label{eq:sigsc:auglag}
+\end{align}
+We then alternate over optimizing $C, Z, \Omega$ sequentially:
+\begin{enumerate}
+\item $C^{t+1} \leftarrow \argmin_C \Ell_\rho(C, Z^t, \Omega^t)$,
+\item $Z^{t+1} \leftarrow \argmin_Z \Ell_\rho(C^{t+1}, Z, \Omega^t)$,
+\item $\Omega^{t+1} \leftarrow \Omega^{t} + C^{t+1} - Z^{t+1}$.
+\end{enumerate}
+
+\subsection{C-step: ridge regression}
+Note that the first step no longer depends on the regularizer $g$.  The remaining terms are
+quadratic in $C$, and amount to a ridge-regression.  To see this, we can calculate the gradient and set to zero:
+as
+\begin{align*}
+\mathbf{0} = \nabla_C \Ell_\rho(C, Z, \Omega) &= -Q\trans (X - QC) + \rho\left(C - (Z - \Omega) \right)\\
+\Rightarrow \quad \overline{C} &= (Q\trans Q + \rho I)^{-1} \left(Q\trans X + \rho (Z - \Omega)\right).
+\end{align*}
+
+% This optimization superficially involves an extremely high-dimensional matrix inversion (or least-squares solution): $Q\trans Q + \rho I \in \R^{2dm \times 2dm}$.
+% However, the matrix is highly structured, and can be partitioned into $d\times d$ diagonal sub-matrices of the form $d_i \circ d_j$, $d_i \circ d_i + \rho I$, or $-e_i \circ e_j$.
+% It can therefore be permuted into a block-diagonal matrix and inverted block-wise:
+% \begin{align*}
+% \left(Q\trans Q + \rho I\right)^{-1} &= \left(\Pi\trans \Pi\left( Q\trans Q + \rho I\right)\Pi\trans \Pi \right)^{-1}\\
+%                                      &= \Pi\trans \left( \Pi \left( Q\trans Q + \rho I\right)\Pi\trans \right)^{-1} \Pi,
+% \end{align*}
+% where $\Pi$ is the following permutation matrix:
+% \[
+% \Pi_{i,j} = \begin{cases}
+% FIXME:  2013-02-20 20:53:44 by Brian McFee <brm2132@columbia.edu>
+% this might be 0-indexed as i+ 
+% Python code:
+% P = zeros( (2 * d * m, 2 * d * m) )
+% for i in range(d):
+%   for j in range(2 * m):
+%       P[2 * m * i + j, d * j + i] = 1
+% 1 & \exists u\in [d], v \in [2m]: \quad (i = 2m(u-1) + v) \wedge (j = d(v-1) + i)\\
+% 0 & \text{otherwise}
+% \end{cases}
+% \]
+% (In fact, it will be simpler to optimize under the alternative parameterization $(Q, C) \mapsto (Q\Pi\trans, \Pi C)$ so that no permutations are necessary, although it complicates the notation
+% in the derivation above.)
+
+% Each $2m\times 2m$ diagonal block of $(\Pi Q\trans Q\Pi\trans + \rho I)$ can be inverted efficiently and in parallel, and then recombined by inverting (transposing) the permutation.  
+% The block-wise inversion costs $\bigO(dm^3)$ (for $d$ inversions of $2m\times 2m$-matrices), rather than the $\bigO(d^3m^3)$ cost of the full matrix inversion.  
+% Since convolutional dictionary learning encodes shift invariance, we should be able to get away with a much smaller dictionary than in the standard sparse coding setting, so that $m\ll d$, and
+% the $C$-step can be solved in approximately (practically) linear time.
+
+% Note that for a fixed dictionary and scaling $\rho$, this inverse can be pre-computed and cached offline as it does not depend on the current data point $X$.
+% However, in practice, we may wish to adaptively scale $\rho$ in each iteration of the ADMM algorithm.
+
+Note that the matrix being inverted is the sum of a diagonal ($\rho I$) and product of low-rank matrices
+($Q\trans Q$).  Applying the matrix inversion lemma, we get:
+\[
+\left( Q\trans Q + \rho I \right)^{-1} = \rho^{-1} I - \rho^{-2} Q\trans \left(I + \rho^{-1} QQ\trans \right)^{-1} Q.
+\]
+The structure of $Q$ allows us to further simplify the inversion as follows.
+
+\begin{lemma}
+If $A = \diagb(\alpha)$ is the diagonal-block matrix associated with a matrix $\alpha$, and $B = \diagb(\beta)$ of compatible dimension, then $AB\trans = I\circ \left(\alpha\beta\trans\right)$.\label{lemma:diagonal}
+\end{lemma}
+\begin{proof}
+By construction of $A$, each pair of rows $A_i, A_j$ is orthogonal.  Because the diagonal pattern is consistent for $A$ and $B$, we also have that $A_i B\trans_j = 0$ whenever $i \neq j$.
+Along the diagonal, we have
+\[
+[AB\trans]_{ii} = \sum_k A_{ik} B_{ik} = \sum_k \alpha_{ik} \beta_{ik} = \alpha_i\trans \beta_i = [\alpha\beta\trans]_{ii}.
+\]
+\end{proof}
+\begin{lemma}
+If $A=\diagb(\alpha)$ and $B=\diagb(\beta)$, then ${AB\trans = BA\trans}$.\label{cor:symmetry}
+\end{lemma}
+\begin{proof}
+Since both $AB\trans$ and $BA\trans$ are diagonal, we need only consider the diagonal entries. 
+Following the argument in the proof of \autoref{lemma:diagonal}, we have the following equalities:
+\begin{align*}
+[AB\trans]_{ii} &= \alpha_i\trans \beta_i\\
+[BA\trans]_{ii} &= \beta_i\trans \alpha_i,
+\end{align*}
+which are equivalent for $\alpha, \beta \in \R^d$, so $[AB\trans]_{ii} = [BA\trans]_{ii}$.
+\end{proof}
+
+\begin{theorem}
+Let $Q\in\R^{2d\times 2dm}$ be the structured diagonal-block matrix as defined in \autoref{eq:sigsc:realized}.  Then $QQ\trans \in \R^{2d\times 2d}$ is diagonal.
+\label{thm:diagb}
+\end{theorem}
+\begin{proof}
+\begin{align*}
+Q &= \left[\begin{array}{rr} A & -B\\ B & A \end{array} \right] & \text{by definition}\\
+\Rightarrow \quad QQ\trans &= \left[\begin{array}{rr} A & -B\\ B & A\end{array} \right]\left[\begin{array}{rr} A\trans & B\trans\\ -B\trans & A\trans\end{array} \right]\\
+&= \left[\begin{array}{rr} AA\trans  + BB\trans, & AB\trans - BA\trans\\ BA\trans - AB\trans, & AA\trans + BB\trans \end{array}\right]\\
+&= \left[\begin{array}{rr} AA\trans  + BB\trans & 0 \\ 0 & AA\trans + BB\trans \end{array}\right] & \autoref{cor:symmetry}
+\end{align*}
+for some diagonal-block matrices $A$ and $B$. \xx{\autoref{cor:symmetry} could be deduced directly from symmetry of $QQ\trans$.}
+By \autoref{lemma:diagonal}, $AA\trans$ and $BB\trans$ are diagonal, and so is their sum.  Therefore, $QQ\trans$ is also diagonal.
+\end{proof}
+It follows from \autoref{thm:diagb} that $I + \rho^{-1}QQ\trans$ is also diagonal, and its inverse $R\defeq\left(I + \rho^{-1}QQ\trans\right)^{-1}$ can be computed in linear time.
+
+Intuitively, the diagonal of $AA\trans + BB\trans$ is $d$-dimensional vector, where the $i$th coordinate measures the total magnitude (squared) of the $i$th dimension across all codewords.
+
+The final equation to solve for $\overline{C}$ is
+\begin{align}
+\overline{C} = \rho^{-1}\left( I + \rho^{-1} Q\trans R Q\right) (Q\trans X + \rho(Z-\Omega)).\label{eq:cstep}
+\end{align}
+
+
+% \begin{corollary}
+% Let $Q$ as in \autoref{thm:diagb}.  Then there exists a permutation $\Pi$ such that $\Pi QQ\trans \Pi\trans$ is block-diagonal, and each block is $2\times2$.
+% \label{cor:permute}
+% \end{corollary}
+% \begin{proof}
+% Each row (column) of $QQ\trans$ has at most two non-zero entries.  Specifically, row (column) $i$ may have non-zeros only at column (row) $i$ (due to the diagonal block) and $i\pm d$ (due to the
+% off-diagonal block).  The permutation $\Pi$ derived from the mapping
+% \[
+% \pi(i) \defeq \begin{cases}
+% 2i - 1 & i \leq d\\
+% 2(i - d) & i > d
+% \end{cases}
+% \]
+% produces block-diagonal structure.
+% \end{proof}
+% Comment: $\Pi X$ for $X = [\Re X' ; \Im X']$ interleaves the real and imaginary components, rather than stacks them separately.
+
+% For any permutation $\Pi$, we have the following identity:
+% \begin{align*}
+% \left(\Pi\trans\Pi (I + \rho^{-1} QQ\trans)\Pi\trans\Pi\right)^{-1}
+% &= \left(\Pi\trans(I + \rho^{-1} \Pi QQ\trans\Pi\trans)\Pi\right)^{-1}\\
+% &= \Pi\trans \left(I + \rho^{-1} \Pi QQ\trans\Pi\trans\right)^{-1}\Pi.
+% \end{align*}
+% In particular, \autoref{cor:permute} shows that $QQ\trans$ can be rearranged into $d$ blocks $q^i$, where each block takes the form
+% \[
+% q^i = \left[\begin{array}{rr}
+% (AA\trans)_{ii} & - (BB\trans)_{ii}\\
+% - (BB\trans)_{ii}& (AA\trans)_{ii}
+% \end{array}\right].
+% \]
+% Consequently, $I + \rho^{-1}\Pi QQ\trans \Pi\trans$ is positive-definite and block diagonal, and therefore has a sparse, block-diagonal, and lower-triangular Cholesky factor $L$.
+
+% Reassembling all the terms and defining $b \defeq Q\trans X + \rho(Z-\Omega)$, we have the following system to solve:
+% \begin{align*}
+% \overline{C} &= (Q\trans Q + \rho I)^{-1} b\\
+% &= \left(\rho^{-1}I - \rho^{-2} Q\trans(I + \rho^{-1}QQ\trans)^{-1} Q \right) b\\
+% &= \left(\rho^{-1}I - \rho^{-2} Q\trans\Pi\trans(I + \rho^{-1}\Pi QQ\trans\Pi\trans)^{-1} \Pi Q \right) b\\
+% &= \rho^{-1} b - \rho^{-2} Q\trans\Pi\trans(I + \rho^{-1}\Pi QQ\trans\Pi\trans)^{-1}\Pi Q b.
+% \end{align*}
+% This leads to the following forward/back-substitution algorithm for $\overline{C}$:
+% \footnote{Note that $Q$ always appears coupled with $\Pi$; in practice, it will be simpler to use the alternate encoding $X \mapsto \Pi X$ which interleaves real and imaginary components, which will
+% eliminate all permutations from the equations and work directly with block-diagonal matrices.}
+% \begin{enumerate}
+% \item $L \leftarrow \text{chol}(I + \rho^{-1}\Pi QQ\trans\Pi\trans)$
+% \item $\gamma \leftarrow L^{-1} \Pi Qb$
+% \item $\overline{C} \leftarrow \rho^{-1}b - \rho^{-2} Q\trans\Pi\trans L^{-\mathsf{T}}\gamma$
+% \end{enumerate}
+% The payoff here is that the Cholesky factor $L$ can be computed in linear ($\bigO(d)$) time, since each diagonal block has constant size.  
+% Similarly, all inversions are applied to $L$ (or $L\trans$), and again become linear-time operations. 
+
+\subsection{Z-step: proximal mapping}
+For a fixed $C^{t+1}$ and $\Omega^t$, step 2 above depends only upon the quadratic term and $g$.  In
+particular, it takes the from of a $\prox$ update:
+\begin{align}
+Z^{t+1} &\leftarrow \argmin_Z g(Z) + \frac{\rho}{2} \|Z - (C^{t+1} + \Omega^t)\|_2^2 \label{eq:zstep}\\
+        &= \prox_{\rho^{-1}g}(C^{t+1} + \Omega^t)
+\end{align}
+
+For the group-sparsity regularizer described above, the update takes the form
+\begin{align*}
+g(C) &= \lambda \sum_{k=1}^m \|C_k\|_2\\
+\Rightarrow \quad Z_k^{t+1} &\leftarrow (C_k^{t+1} + \Omega_k^t) 
+\left(1 - \frac{\lambda}{\rho \|C_k^{t+1} + \Omega^t_k\|_2}\right)_+
+\end{align*}
+where the $k$-subscript indicates the sub-vector corresponding to the $k$th codeword.
+
+\subsection{Z-step continued: time and frequency}
+
+Sometimes the regularizer $g$ is more naturally expressed as a time domain function (\eg, point-wise sparsity, or temporal continuity).  
+More precisely, the following lemma follows by composition of convex and affine functions.
+\begin{lemma}
+Let $h : \C^n \rightarrow \R$ be a convex function, and $g(Z) \defeq h(\FT^{-1}\left\{Z\right\})$.  Then $g$ is convex in $Z$.
+\label{ftconvex}
+\end{lemma}
+\begin{proof}
+Let $\sum_i \lambda_i Z_i$ be a convex combination of points $Z_i$.  Then,
+\begin{align*}
+g\left(\sum_i \lambda_i Z_i \right) &= h\left(\FT^{-1}\left\{\sum_i \lambda_i Z_i \right\} \right) & \text{by definition of } g\\
+&= h\left( \sum_i \lambda_i \FT^{-1}\left\{ Z_i\right\}\right) & \text{by linearity of } \FT^{-1}\\
+&\leq \sum_i \lambda_i h\left(\FT^{-1}\left\{Z_i\right\} \right) & \text{by convexity of } h\\
+&= \sum_i \lambda_i g(Z_i) & \text{by definition of } g.
+\end{align*}
+\end{proof}
+By \autoref{ftconvex}, $g$ is admissible in the ADMM framework.
+In a direct optimization framework (\eg, gradient descent on \autoref{eq:sigsc:realized}), operating
+simultaneously on $Z$ and its (inverse) Fourier transform would be a significant nuisance.  However, the ADMM approach
+greatly simplifies the process.
+
+Note that \autoref{eq:zstep} depends on $C^{t+1} + \Omega^{t}$ only through the $\ell_2$-norm.
+By Parseval's theorem and \autoref{eq:gtoh}, we have for any $U$:
+\begin{align*}
+Z^* 
+&\defeq \argmin_Z g(Z) + \frac{\rho}{2} \left\|Z - U \right\|_2^2 \\
+&= \argmin_Z h\left(\FT^{-1}\left\{Z\right\}\right) + \frac{\rho}{2} \left\|Z - U \right\|_2^2\\
+&= \argmin_Z h\left(\FT^{-1}\left\{Z\right\}\right) + \frac{\rho}{2} \left\|\FT^{-1}\left\{Z - U\right\} \right\|_2^2\\
+&= \FT\left\{\argmin_z h\left(z\right) + \frac{\rho}{2} \left\|z - \FT^{-1}\left\{U\right\}
+\right\|_2^2\right\}\\
+&= \FT\left\{\prox_{\rho^{-1} h} \left( \FT^{-1}\left\{U\right\}\right)\right\},
+\end{align*}
+where $z \defeq \FT^{-1}\left\{Z\right\} \Leftrightarrow \FT\{z\} \defeq Z$.
+
+This suggests the following recipe for the $Z$ update:
+\begin{enumerate}
+\item $u \leftarrow \FT^{-1}\left\{C^{t+1} + \Omega^t \right\}$
+\item $z \leftarrow \prox_{\rho^{-1}h} \left(u\right)$
+\item $Z^{t+1} \leftarrow \FT\left\{z\right\}$
+\end{enumerate}
+The advantage of this approach is that the Fourier transforms need only be computed infrequently, and it's decoupled from
+the $C$-step which is solved entirely in the frequency domain.
+
+\section{D-step (dictionary learning)}
+Given a sample of $n$ data points $\{X^i \given i \in [n] \} \subset \R^{2d}$ and their activations 
+$\{C^i \given i \in [n] \} \subset \R^{2dm}$, the dictionary learning problem can be posed as the following
+optimization:
+\begin{align}
+\min_{D\in \C^{d\times m}} \quad&\frac{1}{n} \sum_{i=1}^n \left(\frac{1}{2} \left\|X^i - \sum_{k=1}^m A^i_k
+\circ D_k \right\|_2^2\right)\label{eq:siscd}\\
+\suchthat \forall k: \quad & D_k^H D_k \leq 1.\notag
+\end{align}
+
+By applying \autoref{lemma:rearrange}, we can equivalently solve the corresponding (real-valued) linear regression problem:
+\begin{align}
+\min_{F\in \R^{2dm}} \quad& \sum_{i=1}^n \left(\frac{1}{2} \left\|X^i - S^i F\right\|_2^2\right) + g(F)\label{eq:siscdmf}
+\end{align}
+where
+\begin{align*}
+F &\defeq \left[\begin{array}{c}
+\vectorize(\Re D)\\
+\vectorize(\Im D)
+\end{array}\right] \in \R^{2dm}\\
+S^i &\defeq \left[\begin{array}{rr}
+\diagb(\Re A^i) & -\diagb(\Im A^i)\\
+\diagb(\Im A^i) & \diagb(\Re A^i)
+\end{array}\right] \in \R^{2d \times 2dm}
+\end{align*}
+and $g(\cdot)$ encodes the feasibility constraint on $F$.
+
+\subsection{D-step via ADMM}
+Although \autoref{eq:siscdmf} resembles the regression problem encountered during the $C$-step, the involvement of multiple encodings $S^i$ will render the matrix inversion lemma approach
+untenable.  Instead, we will split the dictionary along examples, as follows:
+\begin{align}
+\min_{F, F_i} \quad& \sum_{i=1}^n \frac{1}{2} \left\|X^i - S^i F_i\right\|_2^2 + g(F)\\
+\suchthat \forall i: \quad & F_i - F = 0 \notag.
+\end{align}
+This results in the augmented Lagrangian:
+\[
+\Ell_\rho(F_i, F, E_i) = \sum_{i=1}^n \frac{1}{2} \left\|X^i - S^i F_i\right\|_2^2 + g(F) + \frac{\rho}{2}\sum_{i=1}^n \|F_i - (F - E_i)\|_2^2,
+\]
+where we now have a dual parameter $E_i$ for each constraint $F_i$.
+
+\subsection{$F_i$-step}
+To solve for each data point's optimal codebook, we compute the gradient:
+\begin{align*}
+\zero = \nabla_{F_i}\Ell_\rho &= -(S^i)\trans (X^i - S^i F_i) + \rho(F_i - (F - E_i)\\
+\Rightarrow\quad \overline{F_i} &= \left(\rho I + (S^i)\trans S^i \right)^{-1} \left((S^i)\trans X^i + \rho (F - E_i) \right).
+\end{align*}
+This equation is identical to the derivation of the optimal $C$-step.  Moreover, the $S^i$ matrix exhibits the same structure as $Q$, and we can thus apply the matrix inversion lemma, 
+\autoref{thm:diagb}, and \autoref{eq:cstep} to solve for $F_i$ efficiently by inverting only diagonal matrices.  The update then takes the form:
+\begin{align}
+\overline{F_i} = \rho^{-1}\left( I + \rho^{-1} (S^i)\trans \Sigma S^i\right) ((S^i)\trans X^i + \rho(F-E_i)).\label{eq:fistep}
+\end{align}
+with $\Sigma \defeq \left(I + \rho^{-1} (S^i) (S^i)\trans\right)^{-1}$ diagonal.
+
+Note that because the $F_i$ are all decoupled for a fixed $F$, the codebooks may be solved in parallel, and each full ADMM cycle can be parallelized as a simple scatter/gather (map/reduce)
+pattern.
+
+\subsection{$F$-step}
+To solve for $F$, we optimize $\Ell_\rho$ again:
+\[
+\overline{F} = \argmin_F g(F) + \frac{\rho}{2} \sum_{i=1}^n \|F - (F_i + E_i)\|_2^2.
+\]
+Since $g(\cdot)$ is the indicator of a convex set $\sigma$, this update is equivalent to the projection:
+\begin{align}
+\overline{F} = \Pi_\sigma\left[\sum_{i=1}^n F_i + E_i \right], \label{eq:fstep}
+\end{align}
+which for the case of $\ell_2^2$ bounds on each basis element, reduces to simply scaling each basis down to at most unit length.\xx{Apparently this follows from Pshenichnyi-Rockafellar theorem;
+see also Borwein \& Lewis exercise 3.13c.}
+
+To verify that \autoref{eq:fstep} is correct, first observe that the objective and constraints are separable over the subspaces corresponding to individual codewords.  
+It then suffices to solve the following simplified problem (implicitly on each subspace):
+\[
+\min_f \sum_i \frac{1}{2} \|f - m_i\|^2 \quad \suchthat \quad f\trans f \leq 1.
+\]
+This can be broken into two cases.  Let $\mu \defeq \nicefrac{1}{n}\sum_i m_i$.  If $\mu\trans \mu \leq 1$, then $f = \mu$ is optimal because it feasible, and also the solution to the unconstrained problem.
+Otherwise, it can be shown analytically that the optimal $f$ takes the form $\overline{f} = \mu/\|\mu\|$, which is exactly the projection of $\mu$ onto the unit ball.
+
+\section{Implementation}
+
+Assembling all of the pieces, the dictionary learning algorithm is given as \autoref{algorithm}.
+
+\begin{algorithm}
+\caption{CDL$(X, g, m)$\hfill Convolutional dictionary learning\label{algorithm}}
+\begin{algorithmic}[]
+\REQUIRE{Input data (frequency representation) $X \in \C^{d\times n}$, regularization function $g(\cdot)$, dictionary size $m>0$}
+\ENSURE{Convolutional dictionary $D \in \C^{d\times m}$}
+\item[]{$X \leftarrow \left[\begin{array}{c}\vectorize(\Re X)\\ \vectorize(\Im X) \end{array}\right]$}
+\item[]{Initialize $D \leftarrow \diagb(\text{random}(2d, m))$}
+\FOR{$T= 0, 1, 2, \cdots$}
+    \item $DX \leftarrow D\trans X,\quad \Delta = \diag(DD\trans)$ \COMMENT{Pre-cache values}
+    \item $Z \leftarrow D, \quad \Omega \leftarrow \zero, \quad \rho \leftarrow 1$ \COMMENT{Initialize parameters}
+    \FOR{$t = 0, 1, 2, \cdots$}
+    \item $C \leftarrow \text{ridge}(X, D, \rho, DX + \rho(Z - \Omega), (1 + \rho^{-1}\Delta)^{-1})$   \COMMENT{Encode data}
+    \item $Z \leftarrow g(C + \Omega)$                                  \COMMENT{Regularize solutions}
+    \item $\Omega \leftarrow \Omega + C - Z$                            \COMMENT{Update residual}
+    \item Optional: update $\rho$
+    \ENDFOR
+    \item $S_i \leftarrow \text{reshape}(C_{\cdot i})$ \COMMENT{Reshape each encoding}
+    \item $F \leftarrow \text{reshape}(D)$ \COMMENT{columnize the dictionary}
+    \item $F_i \leftarrow F,\quad E_i \leftarrow \zero, \quad \rho \leftarrow 1$ \COMMENT{Initialize parameters}
+    \item $SX_i \leftarrow (S^i)\trans X_{\cdot i}, \quad \sigma_i \leftarrow S_i\trans S_i$ \COMMENT{Pre-cache values}
+    \FOR{$t = 0, 1, 2, \cdots$} 
+    \item $F_i \leftarrow \text{ridge}(X, S_i, \rho, SX_i + \rho(F - E_i), (1 + \rho^{-1}\sigma_i)^{-1})$ \COMMENT{Optimize each point's codebook (parallel)}
+    \item $F \leftarrow \text{proj}(\sum_i F_i + E_i)$ \COMMENT{Project combined codebooks onto feasible set}
+    \item $E_i \leftarrow E_i + F_i - F$ \COMMENT{Update residual}
+    \item Optional: update $\rho$
+    \ENDFOR
+    \item $D \leftarrow \text{reshape}(F)$
+\ENDFOR
+\RETURN $\text{reshape}([I, \quad jI] D_{\cdot dm})$
+\end{algorithmic}
+\end{algorithm}
+
+\end{document}
