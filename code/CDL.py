@@ -48,7 +48,32 @@ def sparseDiagonalBlock(D):
 
     (d, m)  = D.shape
     A       = scipy.sparse.spdiags(D.T, range(0, - d * m, -d), d * m, d)
-    return A.T
+    return A.T.tocsr()
+
+def columnsFromDiags(Q):
+    '''
+    Input:  2d-by-2dm sparse matrix Q
+    Output: 2d-by-m dense matrix D of diagonals 
+            from the upper and lower block of Q
+    '''
+    # Q = [A, -B ; B A]
+    # cut to the first half of columns
+    # then break vertically
+
+    (d2, d2m)  = Q.shape
+
+    d   = d2    / 2
+    dm  = d2m   / 2
+    
+    
+    D = numpy.empty( (d2, dm / d) )
+
+    for k in xrange(0, dm, d):
+        D[:d,k/d] = Q[range(d), range(k, k + d)]
+        D[d:,k/d] = Q[range(d, d2), range(k, k + d)]
+        pass
+
+    return D
 
 def diagonalBlockRI(D):
     '''
@@ -73,7 +98,7 @@ def diagonalBlockRI(D):
     Q1 = scipy.sparse.hstack([A, -B])
     Q2 = scipy.sparse.hstack([B, A])
 
-    return scipy.sparse.vstack([Q1, Q2])
+    return scipy.sparse.vstack([Q1, Q2]).tocsr()
 #---                            ---#
 
 
