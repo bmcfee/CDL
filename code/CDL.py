@@ -236,8 +236,14 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=False):
     Input:
         X:          2d-by-n     data
         D:          2d-by-2dm   codebook
-        reg:        regularization function
-        max_iter:   # of iterations to run the encoder
+        reg:        regularization function.
+
+                    Example:
+                    reg = functools.partial(CDL.reg_group_l2, lam=0.5, m=num_codewords)
+
+        max_iter:   # of iterations to run the encoder  (Default: 30)
+
+        dynamic_rho: re-scale the augmented lagrangian term?    (Default: False)
 
     Output:
         A:          2dm-by-n    encoding matrix
@@ -258,17 +264,20 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=False):
 
     # Precompute dictionary normalization
     #   FIXME:  2013-03-01 16:12:27 by Brian McFee <brm2132@columbia.edu>
-    #      could be more efficient here
+    #      could be more efficient here, but this is the simplest to code
 
     Dnorm   = (D * D.T).diagonal()
     Dinv    = scipy.sparse.spdiags( (1.0 + Dnorm / rho)**-1, 0, d, d)
 
     # ADMM loop
     for t in xrange(max_iter):
-        # Encode
+        # TODO:   2013-03-02 08:38:09 by Brian McFee <brm2132@columbia.edu>
+        #   parallelize me block-wise
+
+        # Encode all the data
         A = __ridge(D, rho, DX + rho * (Z - O), Dinv)
 
-        # Regularize
+        # Apply the regularizer
         Z = reg(A + O, rho)
 
         # Update residual
@@ -307,14 +316,15 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
     # Initialize ADMM variables
     rho     = 1.0
 
-    Di      = numpy.zeros((d2m, n))
-    Ei      = numpy.zeros((d2m, n))
-    D       = numpy.zeros((d2m, 1))
+    D       = numpy.zeros((d2m, 1))     # The global codebook
+    Di      = numpy.zeros((d2m, n))     # Point-wise codebooks
+    Ei      = numpy.zeros((d2m, n))     # Point-wise residuals
 
     # Pre-compute targets
 
     # FIXME:  2013-03-01 21:41:27 by Brian McFee <brm2132@columbia.edu>
-    #  this is frickin horrendous...
+    #   this is frickin horrendous...
+    #   can scipy.sparse do 3d arrays/tensors??
 
     S       = []
     SX      = []
@@ -328,23 +338,30 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
         pass
 
     for t in xrange(max_iter):
-        # TODO:   2013-03-01 21:42:54 by Brian McFee <brm2132@columbia.edu>
-        # parallelize me         
 
         # Optimize all the codebooks
         for i in xrange(n):
+            # TODO:   2013-03-01 21:42:54 by Brian McFee <brm2132@columbia.edu>
+            # parallelize me         
             Di[:, i] = __ridge(S[i], rho, SX[i] + rho * (D[:,0] - Ei[:,i]), Sinv[i])
             pass
 
-        # Combine and project
-        D = reg_l2_ball(numpy.mean(Di, axis=1) + numpy.mean(Ei, axis=1), m)
+        # Combine point-wise solutions and project
+        D = reg_l2_ball(numpy.sum(Di, axis=1) + numpy.sum(Ei, axis=1), m)
 
-        # Update residuals
+        # Update residuals.  Using array broadcast over all examples here.
         Ei = (Ei + Di) - D
+
         if not dynamic_rho:
             continue
+
         # TODO:   2013-03-01 21:46:21 by Brian McFee <brm2132@columbia.edu>
-        # update rho, rescale targets
+        # update rho
+
+        # Re-compute the inverses
+        for i in xrange(n):
+            Sinv[i] = scipy.sparse.spdiags( (1.0 + Snorm[-1] / rho)**-1, 0, 2*d, 2*d)
+            pass
         pass
 
     # Reshape D
