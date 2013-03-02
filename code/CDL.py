@@ -198,9 +198,10 @@ def reg_group_l2(X, rho, m, lam):
     # Apply the soft-thresholding operator
     return mask * X
 
-def reg_l2_ball(X, rho, m):
+def reg_l2_ball(X, m):
     '''
         Input:      X 2*d*m-by-1 vector of real and imaginary codewords
+                    m >0    number of codewords
 
         Output:     X where each codeword is scaled to at most unit length
     '''
@@ -213,14 +214,16 @@ def reg_l2_ball(X, rho, m):
     # Group by codewords
     Z = numpy.empty(m)
     for k in xrange(0, m * d, d):
-        Z[k] = min(1.0, numpy.sum(Xnorm[k:(k+d)])**-0.5)
+        Z[k/d] = min(1.0, numpy.sum(Xnorm[k:(k+d)])**-0.5)
         pass
 
-    # Repeat each norm
-    Z = numpy.repeat(Z, d)
+    # Repeat and tile each norm
+    Z = numpy.tile(numpy.repeat(Z, d), (1, 2))
 
-    # Return the projected X
-    return Z * X
+    # Project
+    Xp = numpy.empty((d2m, 1))
+    Xp[:,0] = Z * X
+    return Xp
 #---                            ---#
 
 
@@ -284,5 +287,67 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=False):
 #---                            ---#
 
 #--- Dictionary                 ---#
+def dictionary(X, A, max_iter=30, dynamic_rho=False):
+    '''
+    Optimize a dictionary
+
+    Input:
+        X:  2*d-by-n        data matrix
+        A:  2*d*m-by-n      encoding matrix
+        max_iter:           maximum iterations of ADMM
+    '''
+
+    # Get the shapes
+    (d2, n) = X.shape
+    d2m     = A.shape[0]
+
+    d       = d2 / 2
+    m       = d2m / d2
+
+    # Initialize ADMM variables
+    rho     = 1.0
+
+    Di      = numpy.zeros((d2m, n))
+    Ei      = numpy.zeros((d2m, n))
+    D       = numpy.zeros((d2m, 1))
+
+    # Pre-compute targets
+
+    # FIXME:  2013-03-01 21:41:27 by Brian McFee <brm2132@columbia.edu>
+    #  this is frickin horrendous...
+
+    S       = []
+    SX      = []
+    Snorm   = []
+    Sinv    = []
+    for i in xrange(n):
+        S.append(diagonalBlockRI(blockify(A[:,i], m)))
+        SX.append( S[-1].T * X[:,i])
+        Snorm.append((S[-1] * S[-1].T).diagonal())
+        Sinv.append(scipy.sparse.spdiags( (1.0 + Snorm[-1] / rho)**-1, 0, 2*d, 2*d))
+        pass
+
+    for t in xrange(max_iter):
+        # TODO:   2013-03-01 21:42:54 by Brian McFee <brm2132@columbia.edu>
+        # parallelize me         
+
+        # Optimize all the codebooks
+        for i in xrange(n):
+            Di[:, i] = __ridge(S[i], rho, SX[i] + rho * (D[:,0] - Ei[:,i]), Sinv[i])
+            pass
+
+        # Combine and project
+        D = reg_l2_ball(numpy.mean(Di, axis=1) + numpy.mean(Ei, axis=1), m)
+
+        # Update residuals
+        Ei = (Ei + Di) - D
+        if not dynamic_rho:
+            continue
+        # TODO:   2013-03-01 21:46:21 by Brian McFee <brm2132@columbia.edu>
+        # update rho, rescale targets
+        pass
+
+    # Reshape D
+    return diagonalBlockRI(blockify(D, m))
 #---                            ---#
 
