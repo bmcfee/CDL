@@ -368,3 +368,36 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
     return diagonalBlockRI(blockify(D, m))
 #---                            ---#
 
+#--- Alternating minimization   ---#
+def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
+    '''
+    Alternating minimization to learn convolutional dictionary
+
+    Input:
+        X:      2d-by-n     data matrix, real/imaginary-separated
+        m:      number of filters to learn
+        reg:    regularization function handle
+        max_steps:      number of outer-loop steps
+        max_admm_steps: number of inner loop steps
+        D:      initial codebook
+    '''
+
+    (d2, n) = X.shape
+
+    if D is None:
+        # Initialize a random dictionary
+        D = numpy.random.randn( d2, m )
+        # Normalize the codebook
+        D = D / (numpy.sum(D ** 2, axis=0))**0.5
+        # Reshape into diagonalized size
+        D = diagonalBlockRI(D)
+        pass
+
+    for T in xrange(max_steps):
+        A = encoder(X, D, reg, max_iter=max_admm_steps)
+        D = dictionary(X, A)
+        pass
+
+    A = encoder(X, D, reg, max_iter=max_admm_steps)
+    return (D, A)
+#---                            ---#
