@@ -8,6 +8,7 @@ Convolutional Dictionary Learning
 
 import numpy
 import scipy.sparse
+import functools
 
 #--- Utility functions          ---#
 
@@ -132,18 +133,22 @@ def blockify(AB, m):
 
     return numpy.vstack( (A, B) )
 
+#---                            ---#
 
+
+#--- Regression function        ---#
 def __ridge(A, rho, b, Z):
     '''
-    Specialized ridge regression solver for hadamard products.
+    Specialized ridge regression solver for Hadamard products.
 
-        X <- 1/rho  *  (I + 1/rho * A' * Z * A) * b
-
+    Input:
         A:      2d-by-2dm
         rho:    scalar > 0
         b:      2dm
         Z:      2d > 0,  == diag(inv(I + 1/rho * A * A.T))
 
+    Output:
+        X = 1/rho  *  (I + 1/rho * A' * Z^-1 * A) * b
     '''
     # b is an ndarray
     # Q is a sparse matrix
@@ -152,17 +157,97 @@ def __ridge(A, rho, b, Z):
 #---                            ---#
 
 
-#--- Regression function        ---#
-#---                            ---#
-
-
 #--- Regularization functions   ---#
+def reg_time_l1(X, rho, lam):
+    '''
+        sum_i lam / rho * |FFTinv(X[:,i])|_1
+    '''
+    raise Exception('not yet implemented')
+    pass
+
+def reg_group_l2(X, rho, m, lam):
+    '''
+        sum_i sum_k lam / rho * |X[group,i]|)|_2
+    '''
+
+    (d2m, n)    = X.shape
+
+    # Compute norm-squared of real + imaginary
+    dm          = d2m / 2
+    V           = X[:dm,:]**2 + X[dm:,:]**2
+
+    # Group by codeword
+    d           = dm / m
+    Z           = numpy.zeros( (m, n) )
+    for k in xrange(m):
+        Z[k,:]  = numpy.sum(V[(k * d):(k * d + d),:], axis=0)
+        pass
+
+    # Compute the soft-thresholding mask by group
+    mask        = numpy.maximum(0, 1 - (lam / rho) * Z ** -0.5)
+
+    # Duplicate each row of the mask, then tile it to catch the complex region
+    mask        = numpy.tile(numpy.repeat(mask, d, axis=0), (2, 1))
+
+    # Apply the soft-thresholding operator
+    return mask * X
+
+def reg_l2_ball(X, rho, m, lam):
+    raise Exception('not yet implemented')
+    pass
 #---                            ---#
 
 
-#--- Encoder loop               ---#
+
+#--- Encoder                    ---#
+def encoder(X, D, reg, max_iter=30):
+    '''
+    Encoder
+
+    Input:
+        X:          2d-by-n     data
+        D:          2d-by-2dm   codebook
+        reg:        regularization function
+        max_iter:   # of iterations to run the encoder
+
+    Output:
+        A:          2dm-by-n    encoding matrix
+    '''
+
+    (d, dm) = D.shape
+    n       = X.shape[1]
+
+    # Initialize split parameter
+    Z   = numpy.empty( (dm, n) )
+    O   = numpy.empty( (dm, n) )
+
+    # Initialize augmented lagrangian weight
+    rho = 1.0
+
+    # Precompute D'X
+    DX  = D.T * X
+
+    # Precompute dictionary normalization
+    #   FIXME:  2013-03-01 16:12:27 by Brian McFee <brm2132@columbia.edu>
+    #      could be more efficient
+    Dnorm   = (D * D.T).diagonal()
+
+    # ADMM loop
+    for t in xrange(max_iter):
+        # Encode
+        A = __ridge(D, rho, DX + rho * (Z - O), 1 + rho * Dnorm)
+
+        # Regularize
+        Z = reg(A + O)
+
+        # Update residual
+        O = O + A - Z
+
+        # Optional, rescale rho
+        pass
+    return Z
 #---                            ---#
 
-#--- Dictionary loop            ---#
+#--- Dictionary                 ---#
 #---                            ---#
 
