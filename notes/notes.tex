@@ -239,7 +239,7 @@ Intuitively, the diagonal of $AA\trans + BB\trans$ is $d$-dimensional vector, wh
 
 The final equation to solve for $\overline{C}$ is
 \begin{align}
-\overline{C} = \rho^{-1}\left( I + \rho^{-1} Q\trans R Q\right) (Q\trans X + \rho(Z-\Omega)).\label{eq:cstep}
+\overline{C} = \rho^{-1}\left( I - \rho^{-1} Q\trans R Q\right) (Q\trans X + \rho(Z-\Omega)).\label{eq:cstep}
 \end{align}
 
 
@@ -402,7 +402,7 @@ To solve for each data point's optimal codebook, we compute the gradient:
 This equation is identical to the derivation of the optimal $C$-step.  Moreover, the $S^i$ matrix exhibits the same structure as $Q$, and we can thus apply the matrix inversion lemma, 
 \autoref{thm:diagb}, and \autoref{eq:cstep} to solve for $F_i$ efficiently by inverting only diagonal matrices.  The update then takes the form:
 \begin{align}
-\overline{F_i} = \rho^{-1}\left( I + \rho^{-1} (S^i)\trans \Sigma S^i\right) ((S^i)\trans X^i + \rho(F-E_i)).\label{eq:fistep}
+\overline{F_i} = \rho^{-1}\left( I - \rho^{-1} (S^i)\trans \Sigma S^i\right) ((S^i)\trans X^i + \rho(F-E_i)).\label{eq:fistep}
 \end{align}
 with $\Sigma \defeq \left(I + \rho^{-1} (S^i) (S^i)\trans\right)^{-1}$ diagonal.
 
