@@ -150,10 +150,6 @@ def __ridge(A, rho, b, Z):
     Output:
         X = 1/rho  *  (I - 1/rho * A' * Z * A) * b
     '''
-    # b is an ndarray
-    # Q is a sparse matrix
-
-
     return (b - (A.T * (Z * (A * b)) / rho)) / rho
 #---                            ---#
 
@@ -161,7 +157,16 @@ def __ridge(A, rho, b, Z):
 #--- Regularization functions   ---#
 def reg_time_l1(X, rho, lam):
     '''
+        Temporal L1 sparsity: assumes each column of X is (DFT) of a time-series
+
         sum_i lam / rho * |FFTinv(X[:,i])|_1
+    '''
+    raise Exception('not yet implemented')
+    pass
+
+def reg_space_l1(X, rho, lam, w, h):
+    '''
+        Spatial L1 sparsity: assumes each column of X is a vectorized 2d-DFT of a 2d-signal
     '''
     raise Exception('not yet implemented')
     pass
@@ -193,9 +198,29 @@ def reg_group_l2(X, rho, m, lam):
     # Apply the soft-thresholding operator
     return mask * X
 
-def reg_l2_ball(X, rho, m, lam):
-    raise Exception('not yet implemented')
-    pass
+def reg_l2_ball(X, rho, m):
+    '''
+        Input:      X 2*d*m-by-1 vector of real and imaginary codewords
+
+        Output:     X where each codeword is scaled to at most unit length
+    '''
+    d2m     = X.shape[0]
+    d       = d2m / (2 * m)
+
+    #         Real part        Imaginary part
+    Xnorm   = X[:(d2m/2)]**2 + X[(d2m/2):]**2   
+
+    # Group by codewords
+    Z = numpy.empty(m)
+    for k in xrange(0, m * d, d):
+        Z[k] = min(1.0, numpy.sum(Xnorm[k:(k+d)])**-0.5)
+        pass
+
+    # Repeat each norm
+    Z = numpy.repeat(Z, d)
+
+    # Return the projected X
+    return Z * X
 #---                            ---#
 
 
@@ -233,7 +258,7 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=False):
     #      could be more efficient here
 
     Dnorm   = (D * D.T).diagonal()
-    Dinv    = scipy.sparse.spdiags( (1.0 + rho**-1 * Dnorm)**-1, 0, d, d)
+    Dinv    = scipy.sparse.spdiags( (1.0 + Dnorm / rho)**-1, 0, d, d)
 
     # ADMM loop
     for t in xrange(max_iter):
@@ -249,7 +274,10 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=False):
         if not dynamic_rho:
             continue
 
-        # Optional, rescale rho
+        # TODO:   2013-03-01 21:15:09 by Brian McFee <brm2132@columbia.edu>
+        #  rescale rho by primal and dual gap
+
+        # Update Dinv
         Dinv = scipy.sparse.spdiags( (1 + rho * Dnorm)**-1, 0, d, d)
         pass
     return Z
