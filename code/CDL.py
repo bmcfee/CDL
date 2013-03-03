@@ -336,6 +336,9 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
     #   this is frickin horrendous...
     #   can scipy.sparse do 3d arrays/tensors??
 
+    #     TODO:   2013-03-02 21:04:25 by Brian McFee <brm2132@columbia.edu>
+    # can we block these guys up vertically and make one call to ridge? 
+
     S       = []
     SX      = []
     Snorm   = []
@@ -399,6 +402,9 @@ def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
 
     if D is None:
         # Initialize a random dictionary
+        # FIXME:  2013-03-02 19:20:10 by Brian McFee <brm2132@columbia.edu>
+        #   probably better to initialize with columns of X, not random noise
+
         D = numpy.random.randn( d2, m )
         # Normalize the codebook
         D = D / (numpy.sum(D ** 2, axis=0))**0.5
