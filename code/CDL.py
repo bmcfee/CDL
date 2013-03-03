@@ -141,6 +141,8 @@ def __ridge(A, rho, b, Z):
     '''
     Specialized ridge regression solver for Hadamard products.
 
+    Not for external use.
+
     Input:
         A:      2d-by-2dm
         rho:    scalar > 0
@@ -157,9 +159,16 @@ def __ridge(A, rho, b, Z):
 #--- Regularization functions   ---#
 def reg_time_l1(X, rho, lam):
     '''
-        Temporal L1 sparsity: assumes each column of X is (DFT) of a time-series
+        Temporal L1 sparsity: assumes each column of X is (DFT) of a time-series.
 
         sum_i lam / rho * |FFTinv(X[:,i])|_1
+
+        The proper way to use these is as follows:
+
+        from functools import partial
+
+        g = functools.partial(CDL.reg_time_l1, lam=0.5)
+        A = CDL.encode(X, D, g)
     '''
     raise Exception('not yet implemented')
     pass
@@ -200,7 +209,7 @@ def reg_group_l2(X, rho, m, lam):
 
 def reg_l2_ball(X, m):
     '''
-        Input:      X 2*d*m-by-1 vector of real and imaginary codewords
+        Input:      X 2*d*m-by-1 vector  (ndarray) of real and imaginary codewords
                     m >0    number of codewords
 
         Output:     X where each codeword is scaled to at most unit length
@@ -262,10 +271,11 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=False):
     # Precompute D'X
     DX  = D.T * X
 
-    # Precompute dictionary normalization
     #   FIXME:  2013-03-01 16:12:27 by Brian McFee <brm2132@columbia.edu>
-    #      could be more efficient here, but this is the simplest to code
+    #   could be more efficient here, but this is the simplest to code
+    #   also a one-off computation, NBD.
 
+    # Precompute dictionary normalization
     Dnorm   = (D * D.T).diagonal()
     Dinv    = scipy.sparse.spdiags( (1.0 + Dnorm / rho)**-1, 0, d, d)
 
@@ -380,6 +390,9 @@ def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
         max_steps:      number of outer-loop steps
         max_admm_steps: number of inner loop steps
         D:      initial codebook
+
+    Output:
+        (D, A) where X ~= D * A
     '''
 
     (d2, n) = X.shape
@@ -394,6 +407,9 @@ def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
         pass
 
     for T in xrange(max_steps):
+        # TODO:   2013-03-02 19:08:30 by Brian McFee <brm2132@columbia.edu>
+        # add diagonostics, progress-bar output
+
         A = encoder(X, D, reg, max_iter=max_admm_steps)
         D = dictionary(X, A)
         pass
