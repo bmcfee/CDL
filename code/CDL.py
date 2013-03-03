@@ -7,7 +7,7 @@ Convolutional Dictionary Learning
 '''
 
 import numpy
-import scipy.sparse
+import scipy.sparse, scipy.sparse.linalg
 import functools
 
 #--- Utility functions          ---#
@@ -230,8 +230,8 @@ def reg_l2_ball(X, m):
     Z = numpy.tile(numpy.repeat(Z, d), (1, 2))
 
     # Project
-    Xp = numpy.empty((d2m, 1))
-    Xp[:,0] = Z * X
+    Xp = numpy.zeros(d2m)
+    Xp[:] = Z * X
     return Xp
 #---                            ---#
 
@@ -306,7 +306,143 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=False):
 #---                            ---#
 
 #--- Dictionary                 ---#
+def dictionary_block_parallel(X, A, max_iter=30, dynamic_rho=False):
+
+    # Get the shape of the data
+    (d2, n) = X.shape
+    d2m     = A.shape[0]
+
+    d       = d2 / 2
+    m       = d2m / d2
+
+    # Initialize ADMM variables
+    rho     = 1.0
+
+    D       = numpy.zeros(d2m)      # The global codebook
+    Di      = numpy.zeros(d2m * n)  # Point-wise codebooks
+    Ei      = numpy.zeros(d2m * n)  # Point-wise residuals
+
+    # Pre-compute targets
+
+    def __rearrange():
+        for i in xrange(n):
+            Si      = diagonalBlockRI(blockify(A[:,i], m))  # 2d-by-2dm encoding, sparse
+            SXi     = Si.T * X[:,i]                         # 2dm, dense
+            Snormi  = (Si * Si.T).diagonal()                # 2d, dense
+            
+            if i == 0:
+                S       = Si
+                SX      = SXi
+                Snorm   = Snormi
+            else:
+                # Build up block-diagonals
+                S       = scipy.sparse.bmat( [[S, None], [None, Si]])   
+                # Stack the data and normalizers horizontally
+                SX      = numpy.hstack( (SX, SXi) )
+                Snorm   = numpy.hstack( (Snorm, Snormi) )
+                pass
+            pass
+        # Pre-compute Sinv: 2dn-by-2dn diagonal sparse
+        Sinv    = scipy.sparse.spdiags( (1.0 + Snorm / rho)**-1, 0, len(Snorm), len(Snorm) )
+        return (S, SX, Sinv)
+
+    # FIXME:  2013-03-03 11:17:45 by Brian McFee <brm2132@columbia.edu>
+    #   rearrange for dynamic rho: we'll need Snorm separately
+
+    (S, SX, Sinv) = __rearrange()
+
+    # Tile the global dictionary to compute residuals
+    Dtile = numpy.tile(D, (1, n))[0]
+
+    for t in xrange(max_iter):
+        
+        # Solve for pointwise codebooks
+        Di  = __ridge(S, rho, SX + rho * (Dtile - Ei), Sinv)
+
+        # Combine pointwise codebooks
+        RES = numpy.sum(numpy.reshape(Di + Ei, (d2m, n), order='F'), axis=1)
+
+        D   = reg_l2_ball(RES, m)[:,0]
+
+        # Tile the global dictionary to compute residuals
+        Dtile = numpy.tile(D, (1, n))[0]
+
+        # Update residuals
+        Ei  = (Ei + Di) - Dtile
+
+        if not dynamic_rho:
+            continue
+
+        # TODO:   2013-03-03 10:53:03 by Brian McFee <brm2132@columbia.edu>
+        #  update rho
+
+        pass
+
+    # Recombobulate the dictionary
+    return diagonalBlockRI(blockify(D, m))
+
+# TODO:   2013-03-03 11:51:52 by Brian McFee <brm2132@columbia.edu>
+# redo using scipy.sparse.linalg.spsolve, or related method
+#   probably try a few to see which is fastest
+#   screw this parallel, pointwise encoding business
+
 def dictionary(X, A, max_iter=30, dynamic_rho=False):
+
+    (d2, n) = X.shape
+    d2m     = A.shape[0]
+
+    d       = d2 / 2
+    m       = d2m / d2
+
+    # Initialize ADMM variables
+    rho     = 1.0
+
+    D       = numpy.zeros( d2m )   # Unconstrained codebook
+    E       = numpy.zeros_like(D)       # Constrained codebook
+    W       = numpy.zeros_like(E)       # Scaled dual variables
+
+    StX     = numpy.zeros_like(D)
+
+    # Aggregate the scatter and target matrices
+    for i in xrange(n):
+        Si  = diagonalBlockRI(blockify(A[:,i], m))
+        StX     = StX + Si.T * X[:,i]
+        if i == 0:
+            StS     = Si.T * Si
+        else:
+            StS     = StS + Si.T * Si
+        pass
+
+    # We need to solve:
+    #   D <- (rho * I + StS) \ (StX + rho * (E - W) )
+    #   pre-cache the cholesky factor (L * L') = (rho * I + StS), then use back-substitution:
+    #   z <- L \ (StX + rho * (E - W))
+    #   D <- L.T \ z
+    #   looks like scipy.sparse.linalg.factorized does this?
+
+    SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(d2m, d2m) + StS)
+
+    for t in xrange(max_iter):
+        # Solve for the unconstrained codebook
+        D   = SOLVER( StX + rho * (E - W) )
+
+        # Project onto the feasible set
+        E   = reg_l2_ball(D + W, m)
+
+        # Update the residual
+        W   = W + D - E
+
+        if not dynamic_rho:
+            continue
+
+        # TODO:   2013-03-03 14:53:57 by Brian McFee <brm2132@columbia.edu>
+        # update rho? 
+        SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(d2m, d2m) + StS)
+        pass
+
+    return diagonalBlockRI(blockify(E, m))
+
+def dictionary_old(X, A, max_iter=30, dynamic_rho=False):
     '''
     Optimize a dictionary
 
