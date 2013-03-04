@@ -86,6 +86,9 @@ def diagonalBlockRI(D):
             where A and B are derived from the real and imaginary components
     '''
 
+    # FIXME:  2013-03-04 10:16:29 by Brian McFee <brm2132@columbia.edu>
+    #  this needs to go by codeword
+
     # Get the size of each codeword
     d = D.shape[0] / 2
 
@@ -177,10 +180,13 @@ def reg_space_l1(X, rho, lam, w, h):
     '''
         Spatial L1 sparsity: assumes each column of X is a vectorized 2d-DFT of a 2d-signal
     '''
+    #   TODO:   2013-03-04 08:29:21 by Brian McFee <brm2132@columbia.edu>
+    #   need to do iffts on each block independently
+
     raise Exception('not yet implemented')
     pass
 
-def reg_group_l2(X, rho, m, lam):
+def reg_group_l2(X, rho, lam, m):
     '''
     For each column of X, break the rows into m groups
     shrink each group by soft-thresholding
@@ -322,17 +328,22 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
     E       = numpy.zeros_like(D)       # Constrained codebook
     W       = numpy.zeros_like(E)       # Scaled dual variables
 
-    StX     = numpy.zeros_like(D)
 
     # Aggregate the scatter and target matrices
-    for i in xrange(n):
-        Si  = diagonalBlockRI(blockify(A[:,i], m))
-        StX     = StX + Si.T * X[:,i]
-        if i == 0:
-            StS     = Si.T * Si
-        else:
-            StS     = StS + Si.T * Si
-        pass
+    def __aggregator():
+        #   FIXME:  2013-03-04 09:24:43 by Brian McFee <brm2132@columbia.edu>
+        #   verify that blockify, diagonalblockri do the right thing here
+        Si      = diagonalBlockRI(blockify(A[:,0], m))
+        StX     = Si.T * X[:,0]
+        StS     = Si.T * Si
+        for i in xrange(1, n):
+            Si          = diagonalBlockRI(blockify(A[:,i], m))
+            StX         = StX + Si.T * X[:,i]
+            StS         = StS + Si.T * Si
+            pass
+        return (StS, StX)
+
+    (StS, StX) = __aggregator()
 
     # We need to solve:
     #   D <- (rho * I + StS) \ (StX + rho * (E - W) )
@@ -362,6 +373,12 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
 #---                            ---#
 
 #--- Alternating minimization   ---#
+def normalizeDictionary(D):
+    D = columnsFromDiags(D)
+    D = D / (numpy.sum(D**2, axis=0) ** 0.5)
+    D = diagonalBlockRI(D)
+    return D
+
 def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
     '''
     Alternating minimization to learn convolutional dictionary
@@ -385,21 +402,28 @@ def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
         # FIXME:  2013-03-02 19:20:10 by Brian McFee <brm2132@columbia.edu>
         #   probably better to initialize with columns of X, not random noise
 
-        D = numpy.random.randn( d2, m )
-        # Normalize the codebook
-        D = D / (numpy.sum(D ** 2, axis=0))**0.5
-        # Reshape into diagonalized size
-        D = diagonalBlockRI(D)
+#         D = normalizeDictionary(diagonalBlockRI(numpy.random.randn( d2, m )))
+        # Pick m random columns from the input
+        D = normalizeDictionary(diagonalBlockRI(X[:, numpy.random.randint(0, X.shape[1], m)]))
         pass
+
 
     for T in xrange(max_steps):
         # TODO:   2013-03-02 19:08:30 by Brian McFee <brm2132@columbia.edu>
         # add diagonostics, progress-bar output
 
+        # Encode the data
         A = encoder(X, D, reg, max_iter=max_admm_steps)
-        D = dictionary(X, A)
+        print 'A-step MSE=%.3f' % numpy.mean((D * A - X)**2)
+        # Optimize the codebook
+        D = dictionary(X, A, max_iter=max_admm_steps)
+        print 'D-step MSE=%.3f' % numpy.mean((D * A - X)**2)
+
+        # Normalize the codebook
+        D = normalizeDictionary(D)
         pass
 
+    # Re-encode the data with the final codebook
     A = encoder(X, D, reg, max_iter=max_admm_steps)
     return (D, A)
 #---                            ---#
