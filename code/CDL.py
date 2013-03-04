@@ -9,6 +9,15 @@ Convolutional Dictionary Learning
 import numpy
 import scipy.linalg, scipy.sparse, scipy.sparse.linalg
 
+#--- magic numbers              ---#
+RHO_MIN     =   1e-4
+RHO_MAX     =   1e4
+ABSTOL      =   1e-3
+RELTOL      =   1e-2
+MU          =   10.0
+TAU         =   2
+#---                            ---#
+
 #--- Utility functions          ---#
 
 def complexToReal2(X):
@@ -250,7 +259,7 @@ def proj_l2_ball(X, m):
 
 
 #--- Encoder                    ---#
-def encoder(X, D, reg, max_iter=30, dynamic_rho=True, ABSTOL=1e-4, RELTOL=1e-4, MU=1e1, TAU=2):
+def encoder(X, D, reg, max_iter=30, dynamic_rho=True):
     '''
     Encoder
 
@@ -278,7 +287,7 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=True, ABSTOL=1e-4, RELTOL=1e-4, 
     O   = numpy.zeros( (dm, n) )
 
     # Initialize augmented lagrangian weight
-    rho = 0.25
+    rho = 1.0
 
     # Precompute D'X
     DX  = D.T * X
@@ -306,6 +315,8 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=True, ABSTOL=1e-4, RELTOL=1e-4, 
         eps_primal  = (dm**0.5) * ABSTOL + RELTOL * max(scipy.linalg.norm(A), scipy.linalg.norm(Z))
         eps_dual    = (dm**0.5) * ABSTOL + RELTOL * scipy.linalg.norm(O)
 
+        if t % 10 == 0:
+            print '%04d| Encoder: [%.2e < %.2e]\tand\t[%.2e < %.2e]?' % (t, ERR_primal, eps_primal, ERR_dual, eps_dual)
         if ERR_primal < eps_primal and ERR_dual <= eps_dual:
             break
 
@@ -313,36 +324,28 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=True, ABSTOL=1e-4, RELTOL=1e-4, 
             continue
 
         rho_changed = False
-        if ERR_primal > MU * ERR_dual:
-            rho = TAU * rho
+
+        if ERR_primal > MU * ERR_dual and rho < RHO_MAX:
+            rho         = rho   * TAU
+            O           = O     / TAU
             rho_changed = True
-        elif ERR_dual > MU * ERR_primal:
-            rho = rho / TAU
+        elif ERR_dual > MU * ERR_primal and rho > RHO_MIN:
+            rho         = rho   / TAU
+            O           = O     * TAU
             rho_changed = True
             pass
 
         # Update Dinv
         if rho_changed:
-            Dinv = scipy.sparse.spdiags( (1 + rho * Dnorm)**-1, 0, d, d)
+            Dinv = scipy.sparse.spdiags( (1 + rho * Dnorm)**-1.0, 0, d, d)
+            pass
         pass
     return Z
 #---                            ---#
 
 #--- Dictionary                 ---#
-def dictionary(X, A, max_iter=30, dynamic_rho=True, ABSTOL=1e-4, RELTOL=1e-4, MU=10.0, TAU=2.0):
+def dictionary(X, A, max_iter=30, dynamic_rho=True):
 
-    # FIXME:  2013-03-04 12:28:04 by Brian McFee <brm2132@columbia.edu>
-    #  something is very wrong here:
-    #   example output:
-    #  0| A-step MSE=3.002
-    # __| D-step MSE=35.379
-    #  1| A-step MSE=15.636
-    # __| D-step MSE=30.959
-    #
-    # error should always be decreasing here...
-    #
-
-    
     (d2, n) = X.shape
     d2m     = A.shape[0]
 
@@ -350,7 +353,7 @@ def dictionary(X, A, max_iter=30, dynamic_rho=True, ABSTOL=1e-4, RELTOL=1e-4, MU
     m       = d2m / d2
 
     # Initialize ADMM variables
-    rho     = 0.25
+    rho     = 1.0
 
     D       = numpy.zeros( d2m )        # Unconstrained codebook
     E       = numpy.zeros_like(D)       # l2-constrained codebook
@@ -395,6 +398,8 @@ def dictionary(X, A, max_iter=30, dynamic_rho=True, ABSTOL=1e-4, RELTOL=1e-4, MU
         eps_primal  = (d2m**0.5) * ABSTOL + RELTOL * max(scipy.linalg.norm(D), scipy.linalg.norm(E))
         eps_dual    = (d2m**0.5) * ABSTOL + RELTOL * scipy.linalg.norm(W)
         
+        if t % 10 == 0:
+            print '%04d| Dict: [%.2e < %.2e]\tand\t[%.2e < %.2e]?' % (t, ERR_primal, eps_primal, ERR_dual, eps_dual)
         if ERR_primal < eps_primal and ERR_dual <= eps_dual:
             break
 
@@ -402,11 +407,13 @@ def dictionary(X, A, max_iter=30, dynamic_rho=True, ABSTOL=1e-4, RELTOL=1e-4, MU
             continue
 
         rho_changed = False
-        if ERR_primal > MU * ERR_dual:
-            rho = TAU * rho
+        if ERR_primal > MU * ERR_dual and rho < RHO_MAX:
+            rho = rho   * TAU
+            W   = W     / TAU
             rho_changed = True
-        elif ERR_dual > MU * ERR_primal:
-            rho = rho / TAU
+        elif ERR_dual > MU * ERR_primal and rho > RHO_MIN:
+            rho = rho   / TAU
+            W   = W     * TAU
             rho_changed = True
             pass
 
@@ -439,9 +446,10 @@ def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
 
     if D is None:
         # Initialize a random dictionary
-
+        D = numpy.random.randn(d2, m)
+#         D = X[:, numpy.random.randint(0, X.shape[1], m)]
         # Pick m random columns from the input
-        D = normalizeDictionary(columnsToDiags(X[:, numpy.random.randint(0, X.shape[1], m)]))
+        D = normalizeDictionary(columnsToDiags(D))
         pass
 
 
