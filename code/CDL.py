@@ -219,8 +219,8 @@ def reg_group_l2(X, rho, lam, m):
         Z[k,:]  = numpy.sum(V[(k * d):(k * d + d),:], axis=0)**0.5
         pass
 
-    Z[Z < rho / lam] = rho / lam
     # Compute the soft-thresholding mask by group
+    Z[Z < rho / lam] = rho / lam        # Avoid numerical underflow this way
     mask        = numpy.maximum(0, 1 - (lam / rho) / Z)
 
     # Duplicate each row of the mask, then tile it to catch the complex region
@@ -316,8 +316,6 @@ def encoder(X, D, reg, max_iter=500, dynamic_rho=True):
         eps_primal  = (dm**0.5) * ABSTOL + RELTOL * max(scipy.linalg.norm(A), scipy.linalg.norm(Z))
         eps_dual    = (dm**0.5) * ABSTOL + RELTOL * scipy.linalg.norm(O)
 
-        if t % 50 == 0:
-            print '%04d| Encoder: [%.2e < %.2e]\tand\t[%.2e < %.2e]?' % (t, ERR_primal, eps_primal, ERR_dual, eps_dual)
         if ERR_primal < eps_primal and ERR_dual <= eps_dual:
             break
 
@@ -338,7 +336,7 @@ def encoder(X, D, reg, max_iter=500, dynamic_rho=True):
 
         # Update Dinv
         if rho_changed:
-            Dinv = scipy.sparse.spdiags( (1 + rho * Dnorm)**-1.0, 0, d, d)
+            Dinv = scipy.sparse.spdiags( (1.0 + Dnorm / rho)**-1.0, 0, d, d)
             pass
         pass
     return Z
