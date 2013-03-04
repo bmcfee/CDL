@@ -10,7 +10,7 @@ import numpy
 import scipy.linalg, scipy.sparse, scipy.sparse.linalg
 
 #--- magic numbers              ---#
-RHO_MIN     =   1e-4
+RHO_MIN     =   1e-2
 RHO_MAX     =   1e4
 ABSTOL      =   1e-3
 RELTOL      =   1e-2
@@ -216,11 +216,12 @@ def reg_group_l2(X, rho, lam, m):
     d           = dm / m
     Z           = numpy.zeros( (m, n) )
     for k in xrange(m):
-        Z[k,:]  = numpy.sum(V[(k * d):(k * d + d),:], axis=0)
+        Z[k,:]  = numpy.sum(V[(k * d):(k * d + d),:], axis=0)**0.5
         pass
 
+    Z[Z < rho / lam] = rho / lam
     # Compute the soft-thresholding mask by group
-    mask        = numpy.maximum(0, 1 - (lam / rho) * (Z ** -0.5))
+    mask        = numpy.maximum(0, 1 - (lam / rho) / Z)
 
     # Duplicate each row of the mask, then tile it to catch the complex region
     mask        = numpy.tile(numpy.repeat(mask, d, axis=0), (2, 1))
@@ -259,7 +260,7 @@ def proj_l2_ball(X, m):
 
 
 #--- Encoder                    ---#
-def encoder(X, D, reg, max_iter=30, dynamic_rho=True):
+def encoder(X, D, reg, max_iter=500, dynamic_rho=True):
     '''
     Encoder
 
@@ -315,7 +316,7 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=True):
         eps_primal  = (dm**0.5) * ABSTOL + RELTOL * max(scipy.linalg.norm(A), scipy.linalg.norm(Z))
         eps_dual    = (dm**0.5) * ABSTOL + RELTOL * scipy.linalg.norm(O)
 
-        if t % 10 == 0:
+        if t % 50 == 0:
             print '%04d| Encoder: [%.2e < %.2e]\tand\t[%.2e < %.2e]?' % (t, ERR_primal, eps_primal, ERR_dual, eps_dual)
         if ERR_primal < eps_primal and ERR_dual <= eps_dual:
             break
@@ -344,7 +345,7 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=True):
 #---                            ---#
 
 #--- Dictionary                 ---#
-def dictionary(X, A, max_iter=30, dynamic_rho=True):
+def dictionary(X, A, max_iter=500, dynamic_rho=True):
 
     (d2, n) = X.shape
     d2m     = A.shape[0]
@@ -398,8 +399,6 @@ def dictionary(X, A, max_iter=30, dynamic_rho=True):
         eps_primal  = (d2m**0.5) * ABSTOL + RELTOL * max(scipy.linalg.norm(D), scipy.linalg.norm(E))
         eps_dual    = (d2m**0.5) * ABSTOL + RELTOL * scipy.linalg.norm(W)
         
-        if t % 10 == 0:
-            print '%04d| Dict: [%.2e < %.2e]\tand\t[%.2e < %.2e]?' % (t, ERR_primal, eps_primal, ERR_dual, eps_dual)
         if ERR_primal < eps_primal and ERR_dual <= eps_dual:
             break
 
