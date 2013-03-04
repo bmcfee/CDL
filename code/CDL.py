@@ -7,8 +7,7 @@ Convolutional Dictionary Learning
 '''
 
 import numpy
-import scipy.sparse, scipy.sparse.linalg
-import functools
+import scipy.linalg, scipy.sparse, scipy.sparse.linalg
 
 #--- Utility functions          ---#
 
@@ -251,7 +250,7 @@ def proj_l2_ball(X, m):
 
 
 #--- Encoder                    ---#
-def encoder(X, D, reg, max_iter=30, dynamic_rho=False):
+def encoder(X, D, reg, max_iter=30, dynamic_rho=True, ABSTOL=1e-4, RELTOL=1e-4, MU=1e1, TAU=2):
     '''
     Encoder
 
@@ -279,7 +278,7 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=False):
     O   = numpy.zeros( (dm, n) )
 
     # Initialize augmented lagrangian weight
-    rho = 1.0
+    rho = 0.25
 
     # Precompute D'X
     DX  = D.T * X
@@ -294,29 +293,56 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=False):
         A = __ridge(D, rho, DX + rho * (Z - O), Dinv)
 
         # Apply the regularizer
+        Zold = Z
         Z = reg(A + O, rho)
 
         # Update residual
         O = O + A - Z
 
-        # TODO:   2013-03-04 11:05:50 by Brian McFee <brm2132@columbia.edu>
         #  compute stopping criteria
+        ERR_primal  = scipy.linalg.norm(A - Z)
+        ERR_dual    = rho * scipy.linalg.norm(Z - Zold)
+
+        eps_primal  = (dm**0.5) * ABSTOL + RELTOL * max(scipy.linalg.norm(A), scipy.linalg.norm(Z))
+        eps_dual    = (dm**0.5) * ABSTOL + RELTOL * scipy.linalg.norm(O)
+
+        if eps_primal <= ERR_primal and eps_dual <= ERR_dual:
+            break
 
         if not dynamic_rho:
             continue
 
-        # TODO:   2013-03-01 21:15:09 by Brian McFee <brm2132@columbia.edu>
-        #  rescale rho by primal and dual gap
+        rho_changed = False
+        if ERR_primal > MU * ERR_dual:
+            rho = TAU * rho
+            rho_changed = True
+        elif ERR_dual > MU * ERR_primal:
+            rho = rho / TAU
+            rho_changed = True
+            pass
 
         # Update Dinv
-        Dinv = scipy.sparse.spdiags( (1 + rho * Dnorm)**-1, 0, d, d)
+        if rho_changed:
+            Dinv = scipy.sparse.spdiags( (1 + rho * Dnorm)**-1, 0, d, d)
         pass
     return Z
 #---                            ---#
 
 #--- Dictionary                 ---#
-def dictionary(X, A, max_iter=30, dynamic_rho=False):
+def dictionary(X, A, max_iter=30, dynamic_rho=True, ABSTOL=1e-4, RELTOL=1e-4, MU=10.0, TAU=2.0):
 
+    # FIXME:  2013-03-04 12:28:04 by Brian McFee <brm2132@columbia.edu>
+    #  something is very wrong here:
+    #   example output:
+    #  0| A-step MSE=3.002
+    # __| D-step MSE=35.379
+    #  1| A-step MSE=15.636
+    # __| D-step MSE=30.959
+    #
+    # error should always be decreasing here...
+    #
+
+    
     (d2, n) = X.shape
     d2m     = A.shape[0]
 
@@ -324,7 +350,7 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
     m       = d2m / d2
 
     # Initialize ADMM variables
-    rho     = 1.0
+    rho     = 0.25
 
     D       = numpy.zeros( d2m )        # Unconstrained codebook
     E       = numpy.zeros_like(D)       # l2-constrained codebook
@@ -333,8 +359,6 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
 
     # Aggregate the scatter and target matrices
     def __aggregator():
-        # TODO:   2013-03-04 11:31:47 by Brian McFee <brm2132@columbia.edu>
-        #   A => S part must be wrong
         Si      = columnsToDiags(vectorToColumns(A[:,0], m))
         StX     = Si.T * X[:,0]
         StS     = Si.T * Si
@@ -358,20 +382,37 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
         D   = SOLVER( StX + rho * (E - W) )
 
         # Project each basis element onto the l2 ball
+        Eold = E
         E   = proj_l2_ball(D + W, m)
 
         # Update the residual
         W   = W + D - E
 
-        # TODO:   2013-03-04 11:05:50 by Brian McFee <brm2132@columbia.edu>
         #  compute stopping criteria
+        ERR_primal  = scipy.linalg.norm(D - E)
+        ERR_dual    = rho * scipy.linalg.norm(E - Eold)
+
+        eps_primal  = (d2m**0.5) * ABSTOL + RELTOL * max(scipy.linalg.norm(D), scipy.linalg.norm(E))
+        eps_dual    = (d2m**0.5) * ABSTOL + RELTOL * scipy.linalg.norm(W)
+        
+        if eps_primal <= ERR_primal and eps_dual <= ERR_dual:
+            break
 
         if not dynamic_rho:
             continue
 
-        # TODO:   2013-03-03 14:53:57 by Brian McFee <brm2132@columbia.edu>
-        # update rho? 
-        SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(d2m, d2m) + StS)
+        rho_changed = False
+        if ERR_primal > MU * ERR_dual:
+            rho = TAU * rho
+            rho_changed = True
+        elif ERR_dual > MU * ERR_primal:
+            rho = rho / TAU
+            rho_changed = True
+            pass
+
+        if rho_changed:
+            SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(d2m, d2m) + StS)
+            pass
         pass
 
     return columnsToDiags(vectorToColumns(E, m))
@@ -405,9 +446,6 @@ def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
 
 
     for T in xrange(max_steps):
-        # TODO:   2013-03-02 19:08:30 by Brian McFee <brm2132@columbia.edu>
-        # add diagonostics, progress-bar output
-
         # Encode the data
         A = encoder(X, D, reg, max_iter=max_admm_steps)
         print '%2d| A-step MSE=%.3f' % (T, numpy.mean((D * A - X)**2))
