@@ -12,11 +12,11 @@ import functools
 
 #--- Utility functions          ---#
 
-def separateComplex(X):
+def complexToReal2(X):
     '''
     Separate the real and imaginary components of a matrix
 
-    See also: combineComplex()
+    See also: real2ToComplex()
 
     Input:
         complex d-by-n matrix X
@@ -26,11 +26,11 @@ def separateComplex(X):
     '''
     return numpy.vstack((X.real, X.imag))
 
-def combineComplex(Y):
+def real2ToComplex(Y):
     '''
     Combine the real and imaginary components of a matrix
 
-    See also: separateComplex()
+    See also: complexToReal2()
 
     Input:
         real 2d-by-n matrix Y = [ real(X) ; imag(X) ]
@@ -41,17 +41,8 @@ def combineComplex(Y):
     d = Y.shape[0] / 2
     return Y[:d] + 1.j * Y[d:]
 
-def sparseDiagonalBlock(D):
-    '''
-    Rearrange a d-by-m matrix D into a sparse d-by-dm matrix Q
-    The i'th d-by-d block of Q = diag(D[:,i])
-    '''
 
-    (d, m)  = D.shape
-    A       = scipy.sparse.spdiags(D.T, range(0, - d * m, -d), d * m, d)
-    return A.T.tocsr()
-
-def columnsFromDiags(Q):
+def diagsToColumns(Q):
     '''
     Input:  2d-by-2dm sparse matrix Q
     Output: 2d-by-m dense matrix D of diagonals 
@@ -76,7 +67,7 @@ def columnsFromDiags(Q):
 
     return D
 
-def diagonalBlockRI(D):
+def columnsToDiags(D):
     '''
     Input:
         D:  2d-by-m matrix of real+imaginary vectors
@@ -86,17 +77,24 @@ def diagonalBlockRI(D):
             where A and B are derived from the real and imaginary components
     '''
 
-    # FIXME:  2013-03-04 10:16:29 by Brian McFee <brm2132@columbia.edu>
-    #  this needs to go by codeword
+    def __sparseDiagonalBlock(_D):
+        '''
+        Rearrange a d-by-m matrix D into a sparse d-by-dm matrix Q
+        The i'th d-by-d block of Q = diag(D[:,i])
+        '''
+
+        (_d, _m)  = _D.shape
+        _A       = scipy.sparse.spdiags(_D.T, range(0, - _d * _m, -_d), _d * _m, _d)
+        return _A.T.tocsr()
 
     # Get the size of each codeword
     d = D.shape[0] / 2
 
     # Block the real component
-    A = sparseDiagonalBlock(D[:d,:])
+    A = __sparseDiagonalBlock(D[:d,:])
 
     # Block the imaginary component
-    B = sparseDiagonalBlock(D[d:,:])
+    B = __sparseDiagonalBlock(D[d:,:])
 
     # Stack horizontally
     Q1 = scipy.sparse.hstack([A, -B])
@@ -104,7 +102,7 @@ def diagonalBlockRI(D):
 
     return scipy.sparse.vstack([Q1, Q2]).tocsr()
 
-def vectorize(X):
+def columnsToVector(X):
     '''
     Input:  X 2d-by-m array
     Output: Y 2dm-by-1 array
@@ -120,7 +118,7 @@ def vectorize(X):
     B = numpy.reshape(X[d:,:], (d * m, 1), order='F')
     return numpy.vstack( (A, B) )
 
-def blockify(AB, m):
+def vectorToColumns(AB, m):
     '''
     Input:  AB  2dm-by-1 array
             m   number of columns
@@ -178,7 +176,7 @@ def reg_time_l1(X, rho, lam):
 
 def reg_space_l1(X, rho, lam, w, h):
     '''
-        Spatial L1 sparsity: assumes each column of X is a vectorized 2d-DFT of a 2d-signal
+        Spatial L1 sparsity: assumes each column of X is a columnsToVectord 2d-DFT of a 2d-signal
     '''
     #   TODO:   2013-03-04 08:29:21 by Brian McFee <brm2132@columbia.edu>
     #   need to do iffts on each block independently
@@ -332,12 +330,12 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
     # Aggregate the scatter and target matrices
     def __aggregator():
         #   FIXME:  2013-03-04 09:24:43 by Brian McFee <brm2132@columbia.edu>
-        #   verify that blockify, diagonalblockri do the right thing here
-        Si      = diagonalBlockRI(blockify(A[:,0], m))
+        #   verify that vectorToColumns, diagonalblockri do the right thing here
+        Si      = columnsToDiags(vectorToColumns(A[:,0], m))
         StX     = Si.T * X[:,0]
         StS     = Si.T * Si
         for i in xrange(1, n):
-            Si          = diagonalBlockRI(blockify(A[:,i], m))
+            Si          = columnsToDiags(vectorToColumns(A[:,i], m))
             StX         = StX + Si.T * X[:,i]
             StS         = StS + Si.T * Si
             pass
@@ -369,14 +367,14 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
         SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(d2m, d2m) + StS)
         pass
 
-    return diagonalBlockRI(blockify(E, m))
+    return columnsToDiags(vectorToColumns(E, m))
 #---                            ---#
 
 #--- Alternating minimization   ---#
 def normalizeDictionary(D):
-    D = columnsFromDiags(D)
+    D = diagsToColumns(D)
     D = D / (numpy.sum(D**2, axis=0) ** 0.5)
-    D = diagonalBlockRI(D)
+    D = columnsToDiags(D)
     return D
 
 def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
@@ -402,9 +400,9 @@ def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
         # FIXME:  2013-03-02 19:20:10 by Brian McFee <brm2132@columbia.edu>
         #   probably better to initialize with columns of X, not random noise
 
-#         D = normalizeDictionary(diagonalBlockRI(numpy.random.randn( d2, m )))
+#         D = normalizeDictionary(columnsToDiags(numpy.random.randn( d2, m )))
         # Pick m random columns from the input
-        D = normalizeDictionary(diagonalBlockRI(X[:, numpy.random.randint(0, X.shape[1], m)]))
+        D = normalizeDictionary(columnsToDiags(X[:, numpy.random.randint(0, X.shape[1], m)]))
         pass
 
 
