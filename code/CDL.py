@@ -182,7 +182,8 @@ def reg_space_l1(X, rho, lam, w, h):
 
 def reg_group_l2(X, rho, m, lam):
     '''
-        sum_i sum_k lam / rho * |X[group,i]|)|_2
+    For each column of X, break the rows into m groups
+    shrink each group by soft-thresholding
     '''
 
     (d2m, n)    = X.shape
@@ -199,7 +200,7 @@ def reg_group_l2(X, rho, m, lam):
         pass
 
     # Compute the soft-thresholding mask by group
-    mask        = numpy.maximum(0, 1 - (lam / rho) * Z ** -0.5)
+    mask        = numpy.maximum(0, 1 - (lam / rho) * (Z ** -0.5))
 
     # Duplicate each row of the mask, then tile it to catch the complex region
     mask        = numpy.tile(numpy.repeat(mask, d, axis=0), (2, 1))
@@ -306,86 +307,6 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=False):
 #---                            ---#
 
 #--- Dictionary                 ---#
-def dictionary_block_parallel(X, A, max_iter=30, dynamic_rho=False):
-
-    # Get the shape of the data
-    (d2, n) = X.shape
-    d2m     = A.shape[0]
-
-    d       = d2 / 2
-    m       = d2m / d2
-
-    # Initialize ADMM variables
-    rho     = 1.0
-
-    D       = numpy.zeros(d2m)      # The global codebook
-    Di      = numpy.zeros(d2m * n)  # Point-wise codebooks
-    Ei      = numpy.zeros(d2m * n)  # Point-wise residuals
-
-    # Pre-compute targets
-
-    def __rearrange():
-        for i in xrange(n):
-            Si      = diagonalBlockRI(blockify(A[:,i], m))  # 2d-by-2dm encoding, sparse
-            SXi     = Si.T * X[:,i]                         # 2dm, dense
-            Snormi  = (Si * Si.T).diagonal()                # 2d, dense
-            
-            if i == 0:
-                S       = Si
-                SX      = SXi
-                Snorm   = Snormi
-            else:
-                # Build up block-diagonals
-                S       = scipy.sparse.bmat( [[S, None], [None, Si]])   
-                # Stack the data and normalizers horizontally
-                SX      = numpy.hstack( (SX, SXi) )
-                Snorm   = numpy.hstack( (Snorm, Snormi) )
-                pass
-            pass
-        # Pre-compute Sinv: 2dn-by-2dn diagonal sparse
-        Sinv    = scipy.sparse.spdiags( (1.0 + Snorm / rho)**-1, 0, len(Snorm), len(Snorm) )
-        return (S, SX, Sinv)
-
-    # FIXME:  2013-03-03 11:17:45 by Brian McFee <brm2132@columbia.edu>
-    #   rearrange for dynamic rho: we'll need Snorm separately
-
-    (S, SX, Sinv) = __rearrange()
-
-    # Tile the global dictionary to compute residuals
-    Dtile = numpy.tile(D, (1, n))[0]
-
-    for t in xrange(max_iter):
-        
-        # Solve for pointwise codebooks
-        Di  = __ridge(S, rho, SX + rho * (Dtile - Ei), Sinv)
-
-        # Combine pointwise codebooks
-        RES = numpy.sum(numpy.reshape(Di + Ei, (d2m, n), order='F'), axis=1)
-
-        D   = reg_l2_ball(RES, m)[:,0]
-
-        # Tile the global dictionary to compute residuals
-        Dtile = numpy.tile(D, (1, n))[0]
-
-        # Update residuals
-        Ei  = (Ei + Di) - Dtile
-
-        if not dynamic_rho:
-            continue
-
-        # TODO:   2013-03-03 10:53:03 by Brian McFee <brm2132@columbia.edu>
-        #  update rho
-
-        pass
-
-    # Recombobulate the dictionary
-    return diagonalBlockRI(blockify(D, m))
-
-# TODO:   2013-03-03 11:51:52 by Brian McFee <brm2132@columbia.edu>
-# redo using scipy.sparse.linalg.spsolve, or related method
-#   probably try a few to see which is fastest
-#   screw this parallel, pointwise encoding business
-
 def dictionary(X, A, max_iter=30, dynamic_rho=False):
 
     (d2, n) = X.shape
@@ -415,10 +336,7 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
 
     # We need to solve:
     #   D <- (rho * I + StS) \ (StX + rho * (E - W) )
-    #   pre-cache the cholesky factor (L * L') = (rho * I + StS), then use back-substitution:
-    #   z <- L \ (StX + rho * (E - W))
-    #   D <- L.T \ z
-    #   looks like scipy.sparse.linalg.factorized does this?
+    #   Use the sparse factorization solver to pre-compute cholesky factors
 
     SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(d2m, d2m) + StS)
 
@@ -441,80 +359,6 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
         pass
 
     return diagonalBlockRI(blockify(E, m))
-
-def dictionary_old(X, A, max_iter=30, dynamic_rho=False):
-    '''
-    Optimize a dictionary
-
-    Input:
-        X:  2*d-by-n        data matrix
-        A:  2*d*m-by-n      encoding matrix
-        max_iter:           maximum iterations of ADMM
-    '''
-
-    # Get the shapes
-    (d2, n) = X.shape
-    d2m     = A.shape[0]
-
-    d       = d2 / 2
-    m       = d2m / d2
-
-    # Initialize ADMM variables
-    rho     = 1.0
-
-    D       = numpy.zeros((d2m, 1))     # The global codebook
-    Di      = numpy.zeros((d2m, n))     # Point-wise codebooks
-    Ei      = numpy.zeros((d2m, n))     # Point-wise residuals
-
-    # Pre-compute targets
-
-    # FIXME:  2013-03-01 21:41:27 by Brian McFee <brm2132@columbia.edu>
-    #   this is frickin horrendous...
-    #   can scipy.sparse do 3d arrays/tensors??
-
-    #     TODO:   2013-03-02 21:04:25 by Brian McFee <brm2132@columbia.edu>
-    # can we block these guys up vertically and make one call to ridge? 
-
-    S       = []
-    SX      = []
-    Snorm   = []
-    Sinv    = []
-    for i in xrange(n):
-        S.append(diagonalBlockRI(blockify(A[:,i], m)))
-        SX.append( S[-1].T * X[:,i])
-        Snorm.append((S[-1] * S[-1].T).diagonal())
-        Sinv.append(scipy.sparse.spdiags( (1.0 + Snorm[-1] / rho)**-1, 0, 2*d, 2*d))
-        pass
-
-    for t in xrange(max_iter):
-
-        # Optimize all the codebooks
-        for i in xrange(n):
-            # TODO:   2013-03-01 21:42:54 by Brian McFee <brm2132@columbia.edu>
-            # parallelize me         
-            Di[:, i] = __ridge(S[i], rho, SX[i] + rho * (D[:,0] - Ei[:,i]), Sinv[i])
-            pass
-
-        # Combine point-wise solutions and project
-        D = reg_l2_ball(numpy.sum(Di, axis=1) + numpy.sum(Ei, axis=1), m)
-
-        # Update residuals.  Using array broadcast over all examples here.
-        Ei = (Ei + Di) - D
-
-        if not dynamic_rho:
-            continue
-
-        # TODO:   2013-03-01 21:46:21 by Brian McFee <brm2132@columbia.edu>
-        # update rho
-
-        # Re-compute the inverses
-        for i in xrange(n):
-            Sinv[i] = scipy.sparse.spdiags( (1.0 + Snorm[-1] / rho)**-1, 0, 2*d, 2*d)
-            pass
-        pass
-
-    # Reshape D
-    return diagonalBlockRI(blockify(D, m))
 #---                            ---#
 
 #--- Alternating minimization   ---#
