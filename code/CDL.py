@@ -306,7 +306,7 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=True, ABSTOL=1e-4, RELTOL=1e-4, 
         eps_primal  = (dm**0.5) * ABSTOL + RELTOL * max(scipy.linalg.norm(A), scipy.linalg.norm(Z))
         eps_dual    = (dm**0.5) * ABSTOL + RELTOL * scipy.linalg.norm(O)
 
-        if eps_primal <= ERR_primal and eps_dual <= ERR_dual:
+        if ERR_primal < eps_primal and ERR_dual <= eps_dual:
             break
 
         if not dynamic_rho:
@@ -395,7 +395,7 @@ def dictionary(X, A, max_iter=30, dynamic_rho=True, ABSTOL=1e-4, RELTOL=1e-4, MU
         eps_primal  = (d2m**0.5) * ABSTOL + RELTOL * max(scipy.linalg.norm(D), scipy.linalg.norm(E))
         eps_dual    = (d2m**0.5) * ABSTOL + RELTOL * scipy.linalg.norm(W)
         
-        if eps_primal <= ERR_primal and eps_dual <= ERR_dual:
+        if ERR_primal < eps_primal and ERR_dual <= eps_dual:
             break
 
         if not dynamic_rho:
