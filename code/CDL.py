@@ -96,11 +96,8 @@ def columnsToDiags(D):
     # Block the imaginary component
     B = __sparseDiagonalBlock(D[d:,:])
 
-    # Stack horizontally
-    Q1 = scipy.sparse.hstack([A, -B])
-    Q2 = scipy.sparse.hstack([B, A])
-
-    return scipy.sparse.vstack([Q1, Q2]).tocsr()
+    # Block up everything in csr format
+    return scipy.sparse.bmat([ [ A, -B], [B, A] ], format='csr')
 
 def columnsToVector(X):
     '''
