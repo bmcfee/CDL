@@ -85,7 +85,7 @@ def columnsToDiags(D):
 
         (_d, _m)  = _D.shape
         _A       = scipy.sparse.spdiags(_D.T, range(0, - _d * _m, -_d), _d * _m, _d)
-        return _A.T.tocsr()
+        return _A.T
 
     # Get the size of each codeword
     d = D.shape[0] / 2
@@ -131,6 +131,17 @@ def vectorToColumns(AB, m):
 
     return numpy.vstack( (A, B) )
 
+def normalizeDictionary(D):
+    '''
+    Normalize a codebook to have all unit-length bases.
+
+    Input is assumed to be in diagonal-block format.
+
+    '''
+    D = diagsToColumns(D)
+    D = D / (numpy.sum(D**2, axis=0) ** 0.5)
+    D = columnsToDiags(D)
+    return D
 #---                            ---#
 
 
@@ -209,12 +220,12 @@ def reg_group_l2(X, rho, lam, m):
     # Apply the soft-thresholding operator
     return mask * X
 
-def reg_l2_ball(X, m):
+def proj_l2_ball(X, m):
     '''
         Input:      X 2*d*m-by-1 vector  (ndarray) of real and imaginary codewords
                     m >0    number of codewords
 
-        Output:     X where each codeword is scaled to at most unit length
+        Output:     X where each codeword is projected onto the unit l2 ball
     '''
     d2m     = X.shape[0]
     d       = d2m / (2 * m)
@@ -273,19 +284,12 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=False):
     # Precompute D'X
     DX  = D.T * X
 
-    #   FIXME:  2013-03-01 16:12:27 by Brian McFee <brm2132@columbia.edu>
-    #   could be more efficient here, but this is the simplest to code
-    #   also a one-off computation, NBD.
-
     # Precompute dictionary normalization
     Dnorm   = (D * D.T).diagonal()
     Dinv    = scipy.sparse.spdiags( (1.0 + Dnorm / rho)**-1, 0, d, d)
 
     # ADMM loop
     for t in xrange(max_iter):
-        # TODO:   2013-03-02 08:38:09 by Brian McFee <brm2132@columbia.edu>
-        #   parallelize me block-wise
-
         # Encode all the data
         A = __ridge(D, rho, DX + rho * (Z - O), Dinv)
 
@@ -294,6 +298,9 @@ def encoder(X, D, reg, max_iter=30, dynamic_rho=False):
 
         # Update residual
         O = O + A - Z
+
+        # TODO:   2013-03-04 11:05:50 by Brian McFee <brm2132@columbia.edu>
+        #  compute stopping criteria
 
         if not dynamic_rho:
             continue
@@ -313,21 +320,21 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
     (d2, n) = X.shape
     d2m     = A.shape[0]
 
-    d       = d2 / 2
+    d       = d2  / 2
     m       = d2m / d2
 
     # Initialize ADMM variables
     rho     = 1.0
 
-    D       = numpy.zeros( d2m )   # Unconstrained codebook
-    E       = numpy.zeros_like(D)       # Constrained codebook
+    D       = numpy.zeros( d2m )        # Unconstrained codebook
+    E       = numpy.zeros_like(D)       # l2-constrained codebook
     W       = numpy.zeros_like(E)       # Scaled dual variables
 
 
     # Aggregate the scatter and target matrices
     def __aggregator():
-        #   FIXME:  2013-03-04 09:24:43 by Brian McFee <brm2132@columbia.edu>
-        #   verify that vectorToColumns, diagonalblockri do the right thing here
+        # TODO:   2013-03-04 11:31:47 by Brian McFee <brm2132@columbia.edu>
+        #   A => S part must be wrong
         Si      = columnsToDiags(vectorToColumns(A[:,0], m))
         StX     = Si.T * X[:,0]
         StS     = Si.T * Si
@@ -350,11 +357,14 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
         # Solve for the unconstrained codebook
         D   = SOLVER( StX + rho * (E - W) )
 
-        # Project onto the feasible set
-        E   = reg_l2_ball(D + W, m)
+        # Project each basis element onto the l2 ball
+        E   = proj_l2_ball(D + W, m)
 
         # Update the residual
         W   = W + D - E
+
+        # TODO:   2013-03-04 11:05:50 by Brian McFee <brm2132@columbia.edu>
+        #  compute stopping criteria
 
         if not dynamic_rho:
             continue
@@ -368,12 +378,6 @@ def dictionary(X, A, max_iter=30, dynamic_rho=False):
 #---                            ---#
 
 #--- Alternating minimization   ---#
-def normalizeDictionary(D):
-    D = diagsToColumns(D)
-    D = D / (numpy.sum(D**2, axis=0) ** 0.5)
-    D = columnsToDiags(D)
-    return D
-
 def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
     '''
     Alternating minimization to learn convolutional dictionary
@@ -394,10 +398,7 @@ def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
 
     if D is None:
         # Initialize a random dictionary
-        # FIXME:  2013-03-02 19:20:10 by Brian McFee <brm2132@columbia.edu>
-        #   probably better to initialize with columns of X, not random noise
 
-#         D = normalizeDictionary(columnsToDiags(numpy.random.randn( d2, m )))
         # Pick m random columns from the input
         D = normalizeDictionary(columnsToDiags(X[:, numpy.random.randint(0, X.shape[1], m)]))
         pass
@@ -409,10 +410,10 @@ def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
 
         # Encode the data
         A = encoder(X, D, reg, max_iter=max_admm_steps)
-        print 'A-step MSE=%.3f' % numpy.mean((D * A - X)**2)
+        print '%2d| A-step MSE=%.3f' % (T, numpy.mean((D * A - X)**2))
         # Optimize the codebook
         D = dictionary(X, A, max_iter=max_admm_steps)
-        print 'D-step MSE=%.3f' % numpy.mean((D * A - X)**2)
+        print '__| D-step MSE=%.3f' %  numpy.mean((D * A - X)**2)
 
         # Normalize the codebook
         D = normalizeDictionary(D)
