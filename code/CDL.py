@@ -261,7 +261,7 @@ def proj_l2_ball(X, m):
 
 
 #--- Encoder                    ---#
-def encoder(X, D, reg, max_iter=500, dynamic_rho=True):
+def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
     '''
     Encoder
 
@@ -348,7 +348,7 @@ def encoder(X, D, reg, max_iter=500, dynamic_rho=True):
 #---                            ---#
 
 #--- Dictionary                 ---#
-def dictionary(X, A, max_iter=500, dynamic_rho=True, Dinitial=None):
+def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
 
     (d2, n) = X.shape
     d2m     = A.shape[0]
@@ -435,7 +435,7 @@ def dictionary(X, A, max_iter=500, dynamic_rho=True, Dinitial=None):
 #---                            ---#
 
 #--- Alternating minimization   ---#
-def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
+def learn_dictionary(X, m, reg, max_steps=20, max_admm_steps=2000, D=None):
     '''
     Alternating minimization to learn convolutional dictionary
 
@@ -454,10 +454,8 @@ def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
     (d2, n) = X.shape
 
     if D is None:
-        # Initialize a random dictionary
-        #D = numpy.random.randn(d2, m)
-        D = X[:, numpy.random.randint(0, X.shape[1], m)]
         # Pick m random columns from the input
+        D = X[:, numpy.random.randint(0, X.shape[1], m)]
         D = normalizeDictionary(columnsToDiags(D))
         pass
 
