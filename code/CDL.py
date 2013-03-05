@@ -217,12 +217,8 @@ def reg_group_l2(X, rho, lam, m):
     d           = dm / m
     
     # Group 2-norm by codeword
-#     Vd                  = numpy.vstack( (numpy.zeros((1,n)), X[:dm,:]**2 + X[dm:,:]**2))
-#     Z                   = numpy.diff(numpy.cumsum(Vd, axis=0)[::d,:], axis=0)**0.5
-
-    # Version 2: slightly faster than above
-     Vd          = numpy.reshape(X[:dm,:]**2 + X[dm:,:]**2, (d, m * n), order='F')
-     Z           = numpy.reshape(numpy.sum(Vd, axis=0)**0.5, (m, n), order='F')
+    Vd          = numpy.reshape(X[:dm,:]**2 + X[dm:,:]**2, (d, m * n), order='F')
+    Z           = numpy.reshape(numpy.sum(Vd, axis=0)**0.5, (m, n), order='F')
 
 
     # Avoid numerical underflow: these entries will get squashed to 0 in the mask anyway
@@ -247,24 +243,21 @@ def proj_l2_ball(X, m):
     d2m     = X.shape[0]
     d       = d2m / (2 * m)
 
-    #   TODO:   2013-03-05 16:28:56 by Brian McFee <brm2132@columbia.edu>
-    #   repack Z computation as a dot product on X**2
-
     #         Real part        Imaginary part
     Xnorm   = X[:(d2m/2)]**2 + X[(d2m/2):]**2   
 
     # Group by codewords
     Z = numpy.empty(m)
     for k in xrange(0, m * d, d):
-        Z[k/d] = min(1.0, numpy.sum(Xnorm[k:(k+d)])**-0.5)
+        Z[k/d] = max(1.0, numpy.sum(Xnorm[k:(k+d)])**0.5)
         pass
-
+    
     # Repeat and tile each norm
-    Z = numpy.tile(numpy.repeat(Z, d), (1, 2))
+    Z       = numpy.tile(numpy.repeat(Z, d), (1, 2))
 
     # Project
-    Xp = numpy.zeros(d2m)
-    Xp[:] = Z * X
+    Xp      = numpy.zeros(d2m)
+    Xp[:]   = X / Z
     return Xp
 #---                            ---#
 
