@@ -343,7 +343,7 @@ def encoder(X, D, reg, max_iter=500, dynamic_rho=True):
 #---                            ---#
 
 #--- Dictionary                 ---#
-def dictionary(X, A, max_iter=500, dynamic_rho=True):
+def dictionary(X, A, max_iter=500, dynamic_rho=True, Dinitial=None):
 
     (d2, n) = X.shape
     d2m     = A.shape[0]
@@ -358,6 +358,9 @@ def dictionary(X, A, max_iter=500, dynamic_rho=True):
     E       = numpy.zeros_like(D)       # l2-constrained codebook
     W       = numpy.zeros_like(E)       # Scaled dual variables
 
+    if Dinitial is not None:
+        E   = columnsToVector(diagsToColumns(Dinitial))[:,0]
+        pass
 
     # Aggregate the scatter and target matrices
     def __aggregator():

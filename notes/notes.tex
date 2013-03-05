@@ -396,6 +396,23 @@ To compute $\overline{F}$ given $E$ and $W$, we again compute the gradient:
 Like the $A$ update, the $F$ update takes the form of a ridge regression.
 Unfortunately, since the $2dm\times 2dm$ matrix being inverted is not necessarily low-rank, we cannot
 directly apply the matrix inversion lemma here.
+
+However, the sparsity pattern of $S_i\trans S_i$ is well-structured: each row (and column) has at most $2m$ non-zero entries which are evenly spaced by the diagonal-block construction.
+Since this pattern is fixed for all $S_i\trans S_i$, it holds for the sum as well.  Now, we exploit the fact that inversion is invariant to permutations: for any permutation matrix
+$\Pi$ and symmetric matrix $\Sigma$, we have the following:
+\begin{align*}
+\left(\Pi\trans\Pi\left(\rho I + \Sigma\right)\Pi\trans\Pi\right)^{-1} &= \Pi\trans \left( \rho\Pi I\Pi\trans + \Pi\Sigma\Pi\trans \right)^{-1} \Pi\\
+&= \Pi\trans \left(\rho I + \Pi\Sigma\Pi\trans \right)^{-1}\Pi.
+\end{align*}
+That is, it suffices to permute $\Sigma$ into a block-diagonal matrix to compute the inverse, and then undo the permutation.  The permuted matrix has $d$ blocks of size $2m\times 2m$
+which may then be inverted independently in time $O(dm^3$).  For convolutional dictionary learning, $m$ is often small ($m \ll d$), so this provide a substantial speedup over a direct
+inversion.  
+
+It is also worth noting that since the same inversion will be repeatedly applied to the ADMM iterates, it is worth pre-computing and caching the Cholesky factorization of 
+${\rho I + \Pi\Sigma\Pi\trans}$.  The scipy.sparse package makes this relatively easy, and its sparse LU decomposition implementation is also capable of discovering the block-diagonal
+permutation $\Pi$.
+
+
 % \subsection{D-step via ADMM}
 % Although \autoref{eq:siscdmf} resembles the regression problem encountered during the $C$-step, the involvement of multiple encodings $S_i$ will render the matrix inversion lemma approach
 % untenable.  Instead, we will split the dictionary along examples, as follows:
@@ -466,16 +483,19 @@ Assembling all of the pieces, the dictionary learning algorithm is given as \aut
     \item Optional: update $\rho$
     \ENDFOR
     \item $S_i \leftarrow \text{reshape}(C_{\cdot i})$ \COMMENT{Reshape each encoding}
-    \item $F \leftarrow \text{reshape}(D)$ \COMMENT{columnize the dictionary}
-    \item $F_i \leftarrow F,\quad E_i \leftarrow \zero, \quad \rho \leftarrow 1$ \COMMENT{Initialize parameters}
-    \item $SX_i \leftarrow (S_i)\trans X_{\cdot i}, \quad \sigma_i \leftarrow \diag(S_i S_i\trans)$ \COMMENT{Pre-cache values}
+    \item $E \leftarrow \text{reshape}(D)$ \COMMENT{columnize the dictionary}
+    \item $\Xi \leftarrow \sum_{i=1}^n S_i\trans X_{\cdot i}, \quad \Sigma \leftarrow \sum_{i=1}^n S_i\trans S_i$ \COMMENT{Pre-cache values}
+    \item $F \leftarrow \zero ,\quad W \leftarrow \zero, \quad \rho \leftarrow 1$ \COMMENT{Initialize parameters}
+%     \item $SX_i \leftarrow (S_i)\trans X_{\cdot i}, \quad \sigma_i \leftarrow \diag(S_i S_i\trans)$ \COMMENT{Pre-cache values}
     \FOR{$t = 0, 1, 2, \cdots$} 
-    \item $F_i \leftarrow \text{ridge}(S_i, \rho, SX_i + \rho(F - E_i), (1 + \rho^{-1}\sigma_i)^{-1})$ \COMMENT{Optimize each point's codebook (parallel)}
-    \item $F \leftarrow \text{proj}(\sum_i F_i + E_i)$ \COMMENT{Project combined codebooks onto feasible set}
-    \item $E_i \leftarrow E_i + F_i - F$ \COMMENT{Update residual}
+    \item $F \leftarrow \left(\rho I + \Sigma \right)^{-1} \left( \Xi + \rho (E - W) \right)$ \COMMENT{Optimize the unconstrained codebook}
+%     \item $F_i \leftarrow \text{ridge}(S_i, \rho, SX_i + \rho(F - E_i), (1 + \rho^{-1}\sigma_i)^{-1})$ \COMMENT{Optimize each point's codebook (parallel)}
+%     \item $F \leftarrow \text{proj}(\sum_i F_i + E_i)$ \COMMENT{Project combined codebooks onto feasible set}
+    \item $E \leftarrow \text{proj}( F + W)$ \COMMENT{Project codebook onto feasible set}
+    \item $W \leftarrow W + F - E$ \COMMENT{Update residual}
     \item Optional: update $\rho$
     \ENDFOR
-    \item $D \leftarrow \text{reshape}(F)$
+    \item $D \leftarrow \text{reshape}(E)$
 \ENDFOR
 \RETURN $\text{reshape}([I, \quad jI] D_{\cdot dm})$
 \end{algorithmic}
