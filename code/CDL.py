@@ -66,7 +66,6 @@ def diagsToColumns(Q):
     d   = d2    / 2
     dm  = d2m   / 2
     
-    
     D = numpy.empty( (d2, dm / d) )
 
     for k in xrange(0, dm, d):
@@ -170,6 +169,12 @@ def __ridge(A, rho, b, Z):
     Output:
         X = 1/rho  *  (I - 1/rho * A' * Z * A) * b
     '''
+    # FIXME:  2013-03-05 16:26:55 by Brian McFee <brm2132@columbia.edu>
+    # profile this on real data: make sure all strides and row/column-majorness is optimal     
+
+    # TODO:   2013-03-05 16:27:11 by Brian McFee <brm2132@columbia.edu>
+    #  move into the encoder proper to save stack frames
+
     return (b - (A.T * (Z * (A * b)) / rho)) / rho
 #---                            ---#
 
@@ -208,24 +213,26 @@ def reg_group_l2(X, rho, lam, m):
     '''
 
     (d2m, n)    = X.shape
-
-    # Compute norm-squared of real + imaginary
     dm          = d2m / 2
-    V           = X[:dm,:]**2 + X[dm:,:]**2
-
-    # Group by codeword
     d           = dm / m
-    Z           = numpy.zeros( (m, n) )
-    for k in xrange(m):
-        Z[k,:]  = numpy.sum(V[(k * d):(k * d + d),:], axis=0)**0.5
-        pass
+    
+    # Group 2-norm by codeword
+#     Vd                  = numpy.vstack( (numpy.zeros((1,n)), X[:dm,:]**2 + X[dm:,:]**2))
+#     Z                   = numpy.diff(numpy.cumsum(Vd, axis=0)[::d,:], axis=0)**0.5
+
+    # Version 2: slightly faster than above
+     Vd          = numpy.reshape(X[:dm,:]**2 + X[dm:,:]**2, (d, m * n), order='F')
+     Z           = numpy.reshape(numpy.sum(Vd, axis=0)**0.5, (m, n), order='F')
+
+
+    # Avoid numerical underflow: these entries will get squashed to 0 in the mask anyway
+    Z[Z < (lam / rho)]  = lam / rho        
 
     # Compute the soft-thresholding mask by group
-    Z[Z < (lam / rho)] = lam / rho        # Avoid numerical underflow 
-    mask        = numpy.maximum(0, 1 - (lam / rho) / Z)
+    mask                = numpy.maximum(0, 1 - (lam / rho) / Z)
 
     # Duplicate each row of the mask, then tile it to catch the complex region
-    mask        = numpy.tile(numpy.repeat(mask, d, axis=0), (2, 1))
+    mask                = numpy.tile(numpy.repeat(mask, d, axis=0), (2, 1))
 
     # Apply the soft-thresholding operator
     return mask * X
@@ -239,6 +246,9 @@ def proj_l2_ball(X, m):
     '''
     d2m     = X.shape[0]
     d       = d2m / (2 * m)
+
+    #   TODO:   2013-03-05 16:28:56 by Brian McFee <brm2132@columbia.edu>
+    #   repack Z computation as a dot product on X**2
 
     #         Real part        Imaginary part
     Xnorm   = X[:(d2m/2)]**2 + X[(d2m/2):]**2   
@@ -301,14 +311,14 @@ def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
     # ADMM loop
     for t in xrange(max_iter):
         # Encode all the data
-        A = __ridge(D, rho, DX + rho * (Z - O), Dinv)
+        A       = __ridge(D, rho, DX + rho * (Z - O), Dinv)
 
         # Apply the regularizer
-        Zold = Z
-        Z = reg(A + O, rho)
+        Zold    = Z
+        Z       = reg(A + O, rho)
 
         # Update residual
-        O = O + A - Z
+        O       = O + A - Z
 
         #   only compute the rest of this loop every T_CHECKUP iterations 
         if t % T_CHECKUP != 0:
@@ -463,11 +473,11 @@ def learn_dictionary(X, m, reg, max_steps=20, max_admm_steps=2000, D=None):
     for T in xrange(max_steps):
         # Encode the data
         A = encoder(X, D, reg, max_iter=max_admm_steps)
-        print '%2d| A-step MSE=%.3f' % (T, numpy.mean((D * A - X)**2))
+        print '%2d| A-step MSE=%.3e' % (T, numpy.mean((D * A - X)**2))
 
         # Optimize the codebook
         D = dictionary(X, A, max_iter=max_admm_steps)
-        print '__| D-step MSE=%.3f' %  numpy.mean((D * A - X)**2)
+        print '__| D-step MSE=%.3e' %  numpy.mean((D * A - X)**2)
 
         # Normalize the codebook
         D = normalizeDictionary(D)
