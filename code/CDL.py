@@ -16,6 +16,7 @@ ABSTOL      =   1e-4        # absolute tolerance for convergence criteria
 RELTOL      =   1e-3        # relative tolerance
 MU          =   10.0        # maximum ratio between primal and dual residuals
 TAU         =   2           # scaling factor for rho when primal/dual is off by more than MU
+T_CHECKUP   =   10          # number of steps between convergence tests and rho-rescaling
 #---                            ---#
 
 #--- Utility functions          ---#
@@ -309,12 +310,16 @@ def encoder(X, D, reg, max_iter=500, dynamic_rho=True):
         # Update residual
         O = O + A - Z
 
+        #   only compute the rest of this loop every T_CHECKUP iterations 
+        if t % T_CHECKUP != 0:
+            continue
+    
         #  compute stopping criteria
         ERR_primal  = scipy.linalg.norm(A - Z)
         ERR_dual    = rho * scipy.linalg.norm(Z - Zold)
 
-        eps_primal  = (dm * n)**0.5 * ABSTOL + RELTOL * max(scipy.linalg.norm(A), scipy.linalg.norm(Z))
-        eps_dual    = (dm * n)**0.5 * ABSTOL + RELTOL * scipy.linalg.norm(O)
+        eps_primal  = A.size**0.5 * ABSTOL + RELTOL * max(scipy.linalg.norm(A), scipy.linalg.norm(Z))
+        eps_dual    = O.size**0.5 * ABSTOL + RELTOL * scipy.linalg.norm(O)
 
         if ERR_primal < eps_primal and ERR_dual <= eps_dual:
             break
@@ -393,12 +398,16 @@ def dictionary(X, A, max_iter=500, dynamic_rho=True, Dinitial=None):
         # Update the residual
         W   = W + D - E
 
+        #   only compute the rest of this loop every T_CHECKUP iterations
+        if t % T_CHECKUP != 0:
+            continue
+
         #  compute stopping criteria
         ERR_primal  = scipy.linalg.norm(D - E)
         ERR_dual    = rho * scipy.linalg.norm(E - Eold)
 
-        eps_primal  = (d2m**0.5) * ABSTOL + RELTOL * max(scipy.linalg.norm(D), scipy.linalg.norm(E))
-        eps_dual    = (d2m**0.5) * ABSTOL + RELTOL * scipy.linalg.norm(W)
+        eps_primal  = (D.size**0.5) * ABSTOL + RELTOL * max(scipy.linalg.norm(D), scipy.linalg.norm(E))
+        eps_dual    = (W.size**0.5) * ABSTOL + RELTOL * scipy.linalg.norm(W)
         
         if ERR_primal < eps_primal and ERR_dual <= eps_dual:
             break
