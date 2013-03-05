@@ -354,18 +354,18 @@ The advantage of this approach is that the Fourier transforms need only be compu
 the $C$-step which is solved entirely in the frequency domain.
 
 \section{D-step (dictionary learning)}
-Given a sample of $n$ data points $\{X^i \given i \in [n] \} \subset \R^{2d}$ and their activations 
+Given a sample of $n$ data points $\{X_i \given i \in [n] \} \subset \R^{2d}$ and their activations 
 $\{C^i \given i \in [n] \} \subset \R^{2dm}$, the dictionary learning problem can be posed as the following
 optimization:
 \begin{align}
-\min_{D\in \C^{d\times m}} \quad&\frac{1}{n} \sum_{i=1}^n \left(\frac{1}{2} \left\|X^i - \sum_{k=1}^m A^i_k
+\min_{D\in \C^{d\times m}} \quad&\frac{1}{n} \sum_{i=1}^n \left(\frac{1}{2} \left\|X_i - \sum_{k=1}^m A^i_k
 \circ D_k \right\|_2^2\right)\label{eq:siscd}\\
 \suchthat \forall k: \quad & D_k^H D_k \leq 1.\notag
 \end{align}
 
 By applying \autoref{lemma:rearrange}, we can equivalently solve the corresponding (real-valued) linear regression problem:
 \begin{align}
-\min_{F\in \R^{2dm}} \quad& \sum_{i=1}^n \left(\frac{1}{2} \left\|X^i - S^i F\right\|_2^2\right) + g(F)\label{eq:siscdmf}
+\min_{F\in \R^{2dm}} \quad& \sum_{i=1}^n \left(\frac{1}{2} \left\|X_i - S_i F\right\|_2^2\right) + g(F)\label{eq:siscdmf}
 \end{align}
 where
 \begin{align*}
@@ -373,61 +373,77 @@ F &\defeq \left[\begin{array}{c}
 \vectorize(\Re D)\\
 \vectorize(\Im D)
 \end{array}\right] \in \R^{2dm}\\
-S^i &\defeq \left[\begin{array}{rr}
+S_i &\defeq \left[\begin{array}{rr}
 \diagb(\Re A^i) & -\diagb(\Im A^i)\\
 \diagb(\Im A^i) & \diagb(\Re A^i)
 \end{array}\right] \in \R^{2d \times 2dm}
 \end{align*}
 and $g(\cdot)$ encodes the feasibility constraint on $F$.
 
-\subsection{D-step via ADMM}
-Although \autoref{eq:siscdmf} resembles the regression problem encountered during the $C$-step, the involvement of multiple encodings $S^i$ will render the matrix inversion lemma approach
-untenable.  Instead, we will split the dictionary along examples, as follows:
-\begin{align}
-\min_{F, F_i} \quad& \sum_{i=1}^n \frac{1}{2} \left\|X^i - S^i F_i\right\|_2^2 + g(F)\\
-\suchthat \forall i: \quad & F_i - F = 0 \notag.
-\end{align}
-This results in the augmented Lagrangian:
+Again, we separate out the feasibility constraint by creating an auxiliary variable $E$ and Lagrangian parameter $W$, which results in the augmented Lagrangian:
 \[
-\Ell_\rho(F_i, F, E_i) = \sum_{i=1}^n \frac{1}{2} \left\|X^i - S^i F_i\right\|_2^2 + g(F) + \frac{\rho}{2}\sum_{i=1}^n \|F_i - (F - E_i)\|_2^2,
+\Ell_\rho(F,E,W) \defeq \sum_{i=1}^n \frac{1}{2} \left\| X_i - S_i F\right\|_2^2 + g(E) + \frac{\rho}{2} \left\| F - (E - W)\right\|_2^2.
 \]
-where we now have a dual parameter $E_i$ for each constraint $F_i$.
-
-\subsection{$F_i$-step}
-To solve for each data point's optimal codebook, we compute the gradient:
+\subsection{F-step via ADMM}
+To compute $\overline{F}$ given $E$ and $W$, we again compute the gradient:
 \begin{align*}
-\zero = \nabla_{F_i}\Ell_\rho &= -(S^i)\trans (X^i - S^i F_i) + \rho(F_i - (F - E_i)\\
-\Rightarrow\quad \overline{F_i} &= \left(\rho I + (S^i)\trans S^i \right)^{-1} \left((S^i)\trans X^i + \rho (F - E_i) \right).
+\nabla_F \Ell_\rho(F, E, W) &= \sum_{i=1}^n -S_i\trans (X_i - S_i F) + \rho (F - (E - W)
+)\\
+&= 0\\
+\Rightarrow \quad \overline{F} &= \left(\rho I + \sum_{i=1}^n S_i\trans S_i
+\right)^{-1} \left(\sum_{i=1}^n S_i\trans X_i + \rho(E - W) \right).
 \end{align*}
-This equation is identical to the derivation of the optimal $C$-step.  Moreover, the $S^i$ matrix exhibits the same structure as $Q$, and we can thus apply the matrix inversion lemma, 
-\autoref{thm:diagb}, and \autoref{eq:cstep} to solve for $F_i$ efficiently by inverting only diagonal matrices.  The update then takes the form:
-\begin{align}
-\overline{F_i} = \rho^{-1}\left( I - \rho^{-1} (S^i)\trans \Sigma S^i\right) ((S^i)\trans X^i + \rho(F-E_i)).\label{eq:fistep}
-\end{align}
-with $\Sigma \defeq \left(I + \rho^{-1} (S^i) (S^i)\trans\right)^{-1}$ diagonal.
+Like the $A$ update, the $F$ update takes the form of a ridge regression.
+Unfortunately, since the $2dm\times 2dm$ matrix being inverted is not necessarily low-rank, we cannot
+directly apply the matrix inversion lemma here.
+% \subsection{D-step via ADMM}
+% Although \autoref{eq:siscdmf} resembles the regression problem encountered during the $C$-step, the involvement of multiple encodings $S_i$ will render the matrix inversion lemma approach
+% untenable.  Instead, we will split the dictionary along examples, as follows:
+% \begin{align}
+% \min_{F, F_i} \quad& \sum_{i=1}^n \frac{1}{2} \left\|X_i - S_i F_i\right\|_2^2 + g(F)\\
+% \suchthat \forall i: \quad & F_i - F = 0 \notag.
+% \end{align}
+% This results in the augmented Lagrangian:
+% \[
+% \Ell_\rho(F_i, F, E_i) = \sum_{i=1}^n \frac{1}{2} \left\|X_i - S_i F_i\right\|_2^2 + g(F) + \frac{\rho}{2}\sum_{i=1}^n \|F_i - (F - E_i)\|_2^2,
+% \]
+% where we now have a dual parameter $E_i$ for each constraint $F_i$.
 
-Note that because the $F_i$ are all decoupled for a fixed $F$, the codebooks may be solved in parallel, and each full ADMM cycle can be parallelized as a simple scatter/gather (map/reduce)
-pattern.
+% \subsection{$F_i$-step}
+% To solve for each data point's optimal codebook, we compute the gradient:
+% \begin{align*}
+% \zero = \nabla_{F_i}\Ell_\rho &= -(S_i)\trans (X_i - S_i F_i) + \rho(F_i - (F - E_i)\\
+% \Rightarrow\quad \overline{F_i} &= \left(\rho I + (S_i)\trans S_i \right)^{-1} \left((S_i)\trans X_i + \rho (F - E_i) \right).
+% \end{align*}
+% This equation is identical to the derivation of the optimal $C$-step.  Moreover, the $S_i$ matrix exhibits the same structure as $Q$, and we can thus apply the matrix inversion lemma, 
+% \autoref{thm:diagb}, and \autoref{eq:cstep} to solve for $F_i$ efficiently by inverting only diagonal matrices.  The update then takes the form:
+% \begin{align}
+% \overline{F_i} = \rho^{-1}\left( I - \rho^{-1} (S_i)\trans \Sigma S_i\right) ((S_i)\trans X_i + \rho(F-E_i)).\label{eq:fistep}
+% \end{align}
+% with $\Sigma \defeq \left(I + \rho^{-1} (S_i) (S_i)\trans\right)^{-1}$ diagonal.
 
-\subsection{$F$-step}
-To solve for $F$, we optimize $\Ell_\rho$ again:
-\[
-\overline{F} = \argmin_F g(F) + \frac{\rho}{2} \sum_{i=1}^n \|F - (F_i + E_i)\|_2^2.
-\]
-Since $g(\cdot)$ is the indicator of a convex set $\sigma$, this update is equivalent to the projection:
-\begin{align}
-\overline{F} = \Pi_\sigma\left[\sum_{i=1}^n F_i + E_i \right], \label{eq:fstep}
-\end{align}
-which for the case of $\ell_2^2$ bounds on each basis element, reduces to simply scaling each basis down to at most unit length.\xx{Apparently this follows from Pshenichnyi-Rockafellar theorem;
-see also Borwein \& Lewis exercise 3.13c.}
+% Note that because the $F_i$ are all decoupled for a fixed $F$, the codebooks may be solved in parallel, and each full ADMM cycle can be parallelized as a simple scatter/gather (map/reduce)
+% pattern.
 
-To verify that \autoref{eq:fstep} is correct, first observe that the objective and constraints are separable over the subspaces corresponding to individual codewords.  
-It then suffices to solve the following simplified problem (implicitly on each subspace):
-\[
-\min_f \sum_i \frac{1}{2} \|f - m_i\|^2 \quad \suchthat \quad f\trans f \leq 1.
-\]
-This can be broken into two cases.  Let $\mu \defeq \nicefrac{1}{n}\sum_i m_i$.  If $\mu\trans \mu \leq 1$, then $f = \mu$ is optimal because it feasible, and also the solution to the unconstrained problem.
-Otherwise, it can be shown analytically that the optimal $f$ takes the form $\overline{f} = \mu/\|\mu\|$, which is exactly the projection of $\mu$ onto the unit ball.
+% \subsection{$F$-step}
+% To solve for $F$, we optimize $\Ell_\rho$ again:
+% \[
+% \overline{F} = \argmin_F g(F) + \frac{\rho}{2} \sum_{i=1}^n \|F - (F_i + E_i)\|_2^2.
+% \]
+% Since $g(\cdot)$ is the indicator of a convex set $\sigma$, this update is equivalent to the projection:
+% \begin{align}
+% \overline{F} = \Pi_\sigma\left[\sum_{i=1}^n F_i + E_i \right], \label{eq:fstep}
+% \end{align}
+% which for the case of $\ell_2^2$ bounds on each basis element, reduces to simply scaling each basis down to at most unit length.\xx{Apparently this follows from Pshenichnyi-Rockafellar theorem;
+% see also Borwein \& Lewis exercise 3.13c.}
+
+% To verify that \autoref{eq:fstep} is correct, first observe that the objective and constraints are separable over the subspaces corresponding to individual codewords.  
+% It then suffices to solve the following simplified problem (implicitly on each subspace):
+% \[
+% \min_f \sum_i \frac{1}{2} \|f - m_i\|^2 \quad \suchthat \quad f\trans f \leq 1.
+% \]
+% This can be broken into two cases.  Let $\mu \defeq \nicefrac{1}{n}\sum_i m_i$.  If $\mu\trans \mu \leq 1$, then $f = \mu$ is optimal because it feasible, and also the solution to the unconstrained problem.
+% Otherwise, it can be shown analytically that the optimal $f$ takes the form $\overline{f} = \mu/\|\mu\|$, which is exactly the projection of $\mu$ onto the unit ball.
 
 \section{Implementation}
 
@@ -452,7 +468,7 @@ Assembling all of the pieces, the dictionary learning algorithm is given as \aut
     \item $S_i \leftarrow \text{reshape}(C_{\cdot i})$ \COMMENT{Reshape each encoding}
     \item $F \leftarrow \text{reshape}(D)$ \COMMENT{columnize the dictionary}
     \item $F_i \leftarrow F,\quad E_i \leftarrow \zero, \quad \rho \leftarrow 1$ \COMMENT{Initialize parameters}
-    \item $SX_i \leftarrow (S^i)\trans X_{\cdot i}, \quad \sigma_i \leftarrow \diag(S_i S_i\trans)$ \COMMENT{Pre-cache values}
+    \item $SX_i \leftarrow (S_i)\trans X_{\cdot i}, \quad \sigma_i \leftarrow \diag(S_i S_i\trans)$ \COMMENT{Pre-cache values}
     \FOR{$t = 0, 1, 2, \cdots$} 
     \item $F_i \leftarrow \text{ridge}(S_i, \rho, SX_i + \rho(F - E_i), (1 + \rho^{-1}\sigma_i)^{-1})$ \COMMENT{Optimize each point's codebook (parallel)}
     \item $F \leftarrow \text{proj}(\sum_i F_i + E_i)$ \COMMENT{Project combined codebooks onto feasible set}

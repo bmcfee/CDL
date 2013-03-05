@@ -10,12 +10,12 @@ import numpy
 import scipy.linalg, scipy.sparse, scipy.sparse.linalg
 
 #--- magic numbers              ---#
-RHO_MIN     =   1e-6
-RHO_MAX     =   1e6
-ABSTOL      =   1e-3
-RELTOL      =   1e-2
-MU          =   10.0
-TAU         =   2
+RHO_MIN     =   1e-6        # Minimum allowed scale for augmenting term rho
+RHO_MAX     =   1e6         # Maximum allowed scale for rho
+ABSTOL      =   1e-3        # absolute tolerance for convergence criteria
+RELTOL      =   1e-2        # relative tolerance
+MU          =   10.0        # maximum ratio between primal and dual residuals
+TAU         =   2           # scaling factor for rho when primal/dual is off by more than MU
 #---                            ---#
 
 #--- Utility functions          ---#
@@ -443,7 +443,7 @@ def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
 
     if D is None:
         # Initialize a random dictionary
-#         D = numpy.random.randn(d2, m)
+        #D = numpy.random.randn(d2, m)
         D = X[:, numpy.random.randint(0, X.shape[1], m)]
         # Pick m random columns from the input
         D = normalizeDictionary(columnsToDiags(D))
@@ -454,6 +454,7 @@ def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
         # Encode the data
         A = encoder(X, D, reg, max_iter=max_admm_steps)
         print '%2d| A-step MSE=%.3f' % (T, numpy.mean((D * A - X)**2))
+
         # Optimize the codebook
         D = dictionary(X, A, max_iter=max_admm_steps)
         print '__| D-step MSE=%.3f' %  numpy.mean((D * A - X)**2)
