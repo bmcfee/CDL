@@ -220,7 +220,7 @@ def reg_group_l2(X, rho, lam, m):
         pass
 
     # Compute the soft-thresholding mask by group
-    Z[Z < rho / lam] = rho / lam        # Avoid numerical underflow this way
+    Z[Z < (lam / rho)] = lam / rho        # Avoid numerical underflow 
     mask        = numpy.maximum(0, 1 - (lam / rho) / Z)
 
     # Duplicate each row of the mask, then tile it to catch the complex region
