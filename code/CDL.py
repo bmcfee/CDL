@@ -10,8 +10,8 @@ import numpy
 import scipy.linalg, scipy.sparse, scipy.sparse.linalg
 
 #--- magic numbers              ---#
-RHO_MIN     =   1e-2
-RHO_MAX     =   1e4
+RHO_MIN     =   1e-6
+RHO_MAX     =   1e6
 ABSTOL      =   1e-3
 RELTOL      =   1e-2
 MU          =   10.0
@@ -313,8 +313,8 @@ def encoder(X, D, reg, max_iter=500, dynamic_rho=True):
         ERR_primal  = scipy.linalg.norm(A - Z)
         ERR_dual    = rho * scipy.linalg.norm(Z - Zold)
 
-        eps_primal  = (dm**0.5) * ABSTOL + RELTOL * max(scipy.linalg.norm(A), scipy.linalg.norm(Z))
-        eps_dual    = (dm**0.5) * ABSTOL + RELTOL * scipy.linalg.norm(O)
+        eps_primal  = (dm * n)**0.5 * ABSTOL + RELTOL * max(scipy.linalg.norm(A), scipy.linalg.norm(Z))
+        eps_dual    = (dm * n)**0.5 * ABSTOL + RELTOL * scipy.linalg.norm(O)
 
         if ERR_primal < eps_primal and ERR_dual <= eps_dual:
             break
@@ -443,8 +443,8 @@ def learn_dictionary(X, m, reg, max_steps=50, max_admm_steps=30, D=None):
 
     if D is None:
         # Initialize a random dictionary
-        D = numpy.random.randn(d2, m)
-#         D = X[:, numpy.random.randint(0, X.shape[1], m)]
+#         D = numpy.random.randn(d2, m)
+        D = X[:, numpy.random.randint(0, X.shape[1], m)]
         # Pick m random columns from the input
         D = normalizeDictionary(columnsToDiags(D))
         pass
