@@ -12,8 +12,8 @@ import scipy.linalg, scipy.sparse, scipy.sparse.linalg
 #--- magic numbers              ---#
 RHO_MIN     =   1e-6        # Minimum allowed scale for augmenting term rho
 RHO_MAX     =   1e6         # Maximum allowed scale for rho
-ABSTOL      =   1e-3        # absolute tolerance for convergence criteria
-RELTOL      =   1e-2        # relative tolerance
+ABSTOL      =   1e-4        # absolute tolerance for convergence criteria
+RELTOL      =   1e-3        # relative tolerance
 MU          =   10.0        # maximum ratio between primal and dual residuals
 TAU         =   2           # scaling factor for rho when primal/dual is off by more than MU
 #---                            ---#
