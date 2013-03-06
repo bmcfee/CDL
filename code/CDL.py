@@ -266,6 +266,7 @@ def reg_group_l2_weave(X, rho, lam, m):
                                 +       X[((k + m) * d + j) * n +   i]   
                                     *   X[((k + m) * d + j) * n +   i];
                 }
+                Z[(k * n) + i] = sqrt(Z[(k * n) +i]);
             }
         }
 
@@ -273,7 +274,6 @@ def reg_group_l2_weave(X, rho, lam, m):
 
     # Execute the inline code
     scipy.weave.inline(l2_subvectors, ['n', 'm', 'd', 'X', 'Z'])
-    Z = Z ** 0.5
 
     ### 
     # soft-thresholding
@@ -290,12 +290,10 @@ def reg_group_l2_weave(X, rho, lam, m):
                 if (Z[(k*n) + i] > threshold) {
                     scale = 1.0 - threshold / Z[(k*n) + i];
                 }
-                if (scale > 0.0) {
-                    for (int j = 0; j < d; j++) {
-                        // loop over coordinates
-                        Xshrunk[(k * d + j) * n       + i]  = scale *   X[(k * d + j) * n       +   i];
-                        Xshrunk[((k + m) * d + j) * n + i]  = scale *   X[((k + m) * d + j) * n +   i];
-                    }
+                for (int j = 0; scale > 0.0 && j < d; j++) {
+                    // loop over coordinates
+                    Xshrunk[(k * d + j) * n       + i]  = scale *   X[(k * d + j) * n       +   i];
+                    Xshrunk[((k + m) * d + j) * n + i]  = scale *   X[((k + m) * d + j) * n +   i];
                 }
             }
         }
