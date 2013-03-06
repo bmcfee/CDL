@@ -222,7 +222,6 @@ def reg_group_l2(X, rho, lam, m):
     Vd          = numpy.reshape(X[:(d * m),:]**2 + X[(d * m):,:]**2, (d, m * n), order='F')
     Z           = numpy.reshape(numpy.sum(Vd, axis=0)**0.5, (m, n), order='F')
 
-
     # Avoid numerical underflow: these entries will get squashed to 0 in the mask anyway
     Z[Z < (lam / rho)]  = lam / rho        
 
@@ -245,16 +244,44 @@ def reg_group_l2_weave(X, rho, lam, m):
     dm          = d2m / 2
     d           = dm / m
     
-    # TODO:   2013-03-06 14:00:34 by Brian McFee <brm2132@columbia.edu>
-    # make two weave functions:
     #   1.  compute sub-vector l2 norms
     #   2.  apply soft-thresholding group-wise
 
     # Group 2-norm by codeword
-    Vd          = numpy.reshape(X[:(d * m),:]**2 + X[(d * m):,:]**2, (d, m * n), order='F')
-    Z           = numpy.reshape(numpy.sum(Vd, axis=0)**0.5, (m, n), order='F')
+    Z           = numpy.zeros( (m, n) )
 
-    
+    l2_subvectors = r"""
+
+        for (int i = 0; i < n; i++) {
+            // loop over data points
+
+            for (int k = 0; k < m; k++) {
+                // loop over codewords
+
+                for (int j = 0; j < d; j++) {
+                    // loop over codeword coordinates
+                    // Z[k,i] => Z[ (k * n) + i]
+                    // need to get the jth coefficient from the kth codeword
+                    //      k * d + j   <-- row number
+                    //          * n     <-- wrap around the columns
+                    //              +i  <-- ith data point
+                    Z[(k*n) + i]   
+                                +=      X[(k * d + j) * n       +   i]   
+                                    *   X[(k * d + j) * n       +   i] 
+                                +       X[((k + m) * d + j) * n +   i]   
+                                    *   X[((k + m) * d + j) * n +   i];
+                }
+            }
+        }
+
+    """
+
+    # Execute the inline code
+    scipy.weave.inline(l2_subvectors, ['n', 'm', 'd', 'X', 'Z'])
+    Z = Z ** 0.5
+
+    ### 
+    # soft-thresholding
 
     # Avoid numerical underflow: these entries will get squashed to 0 in the mask anyway
     Z[Z < (lam / rho)]  = lam / rho        
