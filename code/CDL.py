@@ -8,6 +8,7 @@ Convolutional Dictionary Learning
 
 import numpy
 import scipy.linalg, scipy.sparse, scipy.sparse.linalg
+import scipy.weave
 
 #--- magic numbers              ---#
 RHO_MIN     =   1e-4        # Minimum allowed scale for augmenting term rho
@@ -68,10 +69,11 @@ def diagsToColumns(Q):
 
     d   = d2    / 2
     dm  = d2m   / 2
+    m   = dm / d
     
-    D = numpy.empty( (d2, dm / d) )
+    D = numpy.empty( (d2, m) )
 
-    for k in xrange(0, dm, d):
+    for k in xrange(0, d * m, d):
         D[:d,k/d] = Q[range(d), range(k, k + d)]
         D[d:,k/d] = Q[range(d, d2), range(k, k + d)]
         pass
@@ -202,20 +204,22 @@ def reg_space_l1(A, rho, lam, w, h):
     Atime               = numpy.reshape(numpy.fft.fft2(Ashrunk, axes=(0,1)), (w * h * m, n), order='F')
 
     return complexToReal2(Atime)
-    pass
+
 
 def reg_group_l2(X, rho, lam, m):
     '''
     For each column of X, break the rows into m groups
     shrink each group by soft-thresholding
     '''
+    # TODO:   2013-03-06 14:00:34 by Brian McFee <brm2132@columbia.edu>
+    # weave this function
 
     (d2m, n)    = X.shape
     dm          = d2m / 2
     d           = dm / m
     
     # Group 2-norm by codeword
-    Vd          = numpy.reshape(X[:dm,:]**2 + X[dm:,:]**2, (d, m * n), order='F')
+    Vd          = numpy.reshape(X[:(d * m),:]**2 + X[(d * m):,:]**2, (d, m * n), order='F')
     Z           = numpy.reshape(numpy.sum(Vd, axis=0)**0.5, (m, n), order='F')
 
 
@@ -231,6 +235,40 @@ def reg_group_l2(X, rho, lam, m):
     # Apply the soft-thresholding operator
     return mask * X
 
+def reg_group_l2_weave(X, rho, lam, m):
+    '''
+    For each column of X, break the rows into m groups
+    shrink each group by soft-thresholding
+    '''
+
+    (d2m, n)    = X.shape
+    dm          = d2m / 2
+    d           = dm / m
+    
+    # TODO:   2013-03-06 14:00:34 by Brian McFee <brm2132@columbia.edu>
+    # make two weave functions:
+    #   1.  compute sub-vector l2 norms
+    #   2.  apply soft-thresholding group-wise
+
+    # Group 2-norm by codeword
+    Vd          = numpy.reshape(X[:(d * m),:]**2 + X[(d * m):,:]**2, (d, m * n), order='F')
+    Z           = numpy.reshape(numpy.sum(Vd, axis=0)**0.5, (m, n), order='F')
+
+    
+
+    # Avoid numerical underflow: these entries will get squashed to 0 in the mask anyway
+    Z[Z < (lam / rho)]  = lam / rho        
+
+    # Compute the soft-thresholding mask by group
+    mask                = numpy.maximum(0, 1 - (lam / rho) / Z)
+
+    # Duplicate each row of the mask, then tile it to catch the complex region
+    mask                = numpy.tile(numpy.repeat(mask, d, axis=0), (2, 1))
+
+    # Apply the soft-thresholding operator
+    return mask * X
+
+
 def proj_l2_ball(X, m):
     '''
         Input:      X 2*d*m-by-1 vector  (ndarray) of real and imaginary codewords
@@ -238,15 +276,17 @@ def proj_l2_ball(X, m):
 
         Output:     X where each codeword is projected onto the unit l2 ball
     '''
+    # TODO:   2013-03-06 14:00:34 by Brian McFee <brm2132@columbia.edu>
+    # weave this function
     d2m     = X.shape[0]
     d       = d2m / (2 * m)
 
     #         Real part        Imaginary part
-    Xnorm   = X[:(d2m/2)]**2 + X[(d2m/2):]**2   
+    Xnorm   = X[:(d*m)]**2 + X[(d*m):]**2   
 
     # Group by codewords
     Z = numpy.empty(m)
-    for k in xrange(0, m * d, d):
+    for k in xrange(0, d*m, d):
         Z[k/d] = max(1.0, numpy.sum(Xnorm[k:(k+d)])**0.5)
         pass
     
@@ -254,7 +294,7 @@ def proj_l2_ball(X, m):
     Z       = numpy.tile(numpy.repeat(Z, d), (1, 2))
 
     # Project
-    Xp      = numpy.zeros(d2m)
+    Xp      = numpy.zeros(2 * d * m)
     Xp[:]   = X / Z
     return Xp
 #---                            ---#
@@ -283,20 +323,27 @@ def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
     '''
 
     (d, dm) = D.shape
+    m       = dm / d
     n       = X.shape[1]
 
     # Initialize split parameter
-    Z   = numpy.zeros( (dm, n) )
-    O   = numpy.zeros( (dm, n) )
+    Z   = numpy.zeros( (d*m, n) )
+    O   = numpy.zeros( (d*m, n) )
 
     # Initialize augmented lagrangian weight
     rho = 1.0
 
+    # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
+    #  sparse multiply ~= hadamard multiply
     # Precompute D'X
-    DX  = D.T * X
+    DX  = D.T * X   
 
     # Precompute dictionary normalization
+    # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
+    #  sparse multiply ~= hadamard multiply
     Dnorm   = (D * D.T).diagonal()
+    # XXX:    2013-03-06 14:48:36 by Brian McFee <brm2132@columbia.edu>
+    #  sparse multiply ~= axis-scaling
     Dinv    = scipy.sparse.spdiags( (1.0 + Dnorm / rho)**-1, 0, d, d)
 
     #--- Regression function        ---#
@@ -317,6 +364,12 @@ def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
         # FIXME:  2013-03-05 16:26:55 by Brian McFee <brm2132@columbia.edu>
         # profile this on real data: make sure all strides and row/column-majorness is optimal     
     
+        # FIXME:  2013-03-06 14:01:12 by Brian McFee <brm2132@columbia.edu>
+        # Use a different data packing to get rid of sparsity?
+        # or implement our own broadcasty-hadamard product via weave and eliminate sparsity?
+
+        # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
+        #  sparse multiply ~= hadamard multiply
         return (_b - (_D.T * (_Z * (_D * _b)) / rho)) / rho
     #---                            ---#
 
@@ -366,6 +419,8 @@ def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
 
         # Update Dinv
         if rho_changed:
+            # XXX:    2013-03-06 14:48:36 by Brian McFee <brm2132@columbia.edu>
+            #  sparse multiply ~= axis-scaling
             Dinv = scipy.sparse.spdiags( (1.0 + Dnorm / rho)**-1.0, 0, d, d)
             pass
         pass
@@ -384,7 +439,7 @@ def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
     # Initialize ADMM variables
     rho     = 1.0
 
-    D       = numpy.zeros( d2m )        # Unconstrained codebook
+    D       = numpy.zeros( 2 * d * m )  # Unconstrained codebook
     E       = numpy.zeros_like(D)       # l2-constrained codebook
     W       = numpy.zeros_like(E)       # Scaled dual variables
 
@@ -395,11 +450,19 @@ def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
     # Aggregate the scatter and target matrices
     def __aggregator():
         Si      = columnsToDiags(vectorToColumns(A[:,0], m))
+        # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
+        #  sparse multiply ~= hadamard multiply
         StX     = Si.T * X[:,0]
+        # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
+        #  sparse multiply ~= hadamard multiply
         StS     = Si.T * Si
         for i in xrange(1, n):
             Si          = columnsToDiags(vectorToColumns(A[:,i], m))
+            # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
+            #  sparse multiply ~= hadamard multiply
             StX         = StX + Si.T * X[:,i]
+            # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
+            #  sparse multiply ~= hadamard multiply
             StS         = StS + Si.T * Si
             pass
         return (StS, StX)
@@ -410,7 +473,7 @@ def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
     #   D <- (rho * I + StS) \ (StX + rho * (E - W) )
     #   Use the sparse factorization solver to pre-compute cholesky factors
 
-    SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(d2m, d2m) + StS)
+    SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(2 * d * m, 2 * d * m) + StS)
 
     for t in xrange(max_iter):
         # Solve for the unconstrained codebook
@@ -452,10 +515,12 @@ def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
             pass
 
         if rho_changed:
-            SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(d2m, d2m) + StS)
+            SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(2 * d * m, 2 * d * m) + StS)
             pass
         pass
 
+    # XXX:    2013-03-06 14:49:59 by Brian McFee <brm2132@columbia.edu>
+    #  diags construction
     return columnsToDiags(vectorToColumns(E, m))
 #---                            ---#
 
@@ -477,10 +542,11 @@ def learn_dictionary(X, m, reg, max_steps=20, max_admm_steps=2000, D=None):
     '''
 
     (d2, n) = X.shape
+    d = d2 / 2
 
     if D is None:
         # Pick m random columns from the input
-        D = X[:, numpy.random.randint(0, X.shape[1], m)]
+        D = X[:, numpy.random.randint(0, n, m)]
         D = normalizeDictionary(columnsToDiags(D))
         pass
 
