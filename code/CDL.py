@@ -177,7 +177,7 @@ def reg_time_l1(X, rho, lam):
     raise Exception('not yet implemented')
     pass
 
-def reg_space_l1(A, rho, lam, w, h):
+def reg_space_l1(A, rho, lam, w, h, Xout=None):
     '''
         Spatial L1 sparsity: assumes each column of X is a columnsToVectord 2d-DFT of a 2d-signal
 
@@ -186,8 +186,10 @@ def reg_space_l1(A, rho, lam, w, h):
                 rho > 0
                 lam > 0
                 w, h: d = w * h
+                Xout:   destination (must be same shape as A)
 
     '''
+    raise Exception('not yet implemented')
 
     (d2m, n) = A.shape
     d       = w * h
@@ -205,39 +207,16 @@ def reg_space_l1(A, rho, lam, w, h):
 
     return complexToReal2(Atime)
 
-
-def reg_group_l2(X, rho, lam, m):
+def reg_group_l2(X, rho, lam, m, Xout=None):
     '''
-    For each column of X, break the rows into m groups
-    shrink each group by soft-thresholding
-    '''
-    # TODO:   2013-03-06 14:00:34 by Brian McFee <brm2132@columbia.edu>
-    # weave this function
+    Input:  X:      2*d*m-by-n      matrix of codeword activations
+            rho:    augmented lagrangian scaling parameter
+            lam:    weight on the regularization term
+            m:      number of codewords (defines group size)
+            Xout:   destination for the shrunken value
 
-    (d2m, n)    = X.shape
-    dm          = d2m / 2
-    d           = dm / m
-    
-    # Group 2-norm by codeword
-    Vd          = numpy.reshape(X[:(d * m),:]**2 + X[(d * m):,:]**2, (d, m * n), order='F')
-    Z           = numpy.reshape(numpy.sum(Vd, axis=0)**0.5, (m, n), order='F')
-
-    # Avoid numerical underflow: these entries will get squashed to 0 in the mask anyway
-    Z[Z < (lam / rho)]  = lam / rho        
-
-    # Compute the soft-thresholding mask by group
-    mask                = numpy.maximum(0, 1 - (lam / rho) / Z)
-
-    # Duplicate each row of the mask, then tile it to catch the complex region
-    mask                = numpy.tile(numpy.repeat(mask, d, axis=0), (2, 1))
-
-    # Apply the soft-thresholding operator
-    return mask * X
-
-def reg_group_l2_weave(X, rho, lam, m):
-    '''
-    For each column of X, break the rows into m groups
-    shrink each group by soft-thresholding
+    Output:
+            (lam/rho)*Group-l2 shrunken version of X
     '''
 
     (d2m, n)    = X.shape
@@ -248,16 +227,16 @@ def reg_group_l2_weave(X, rho, lam, m):
     #   2.  apply soft-thresholding group-wise
 
     # Group 2-norm by codeword
-    Z           = numpy.zeros( (m, n) )
+    Z           = numpy.empty( (m, n) )
 
     l2_subvectors = r"""
-
         for (int i = 0; i < n; i++) {
             // loop over data points
 
             for (int k = 0; k < m; k++) {
                 // loop over codewords
 
+                Z[(k*n) + i] = 0.0;
                 for (int j = 0; j < d; j++) {
                     // accumulate over codeword coordinates (real and imaginary)
                     Z[(k*n) + i]   
@@ -279,7 +258,10 @@ def reg_group_l2_weave(X, rho, lam, m):
     # soft-thresholding
 
     threshold   = lam / rho
-    Xshrunk     = numpy.zeros_like(X)
+
+    if Xout is None:
+        Xout     = numpy.empty_like(X)
+        pass
 
     group_shrinkage =   r"""
         for (int i = 0; i < n; i++) {
@@ -289,19 +271,25 @@ def reg_group_l2_weave(X, rho, lam, m):
                 float scale = 0.0;
                 if (Z[(k*n) + i] > threshold) {
                     scale = 1.0 - threshold / Z[(k*n) + i];
-                }
-                for (int j = 0; scale > 0.0 && j < d; j++) {
-                    // loop over coordinates
-                    Xshrunk[(k * d + j) * n       + i]  = scale *   X[(k * d + j) * n       +   i];
-                    Xshrunk[((k + m) * d + j) * n + i]  = scale *   X[((k + m) * d + j) * n +   i];
+                    for (int j = 0; j < d; j++) {
+                        // loop over coordinates
+                        Xout[(k * d + j) * n       + i]  = scale *   X[(k * d + j) * n       +   i];
+                        Xout[((k + m) * d + j) * n + i]  = scale *   X[((k + m) * d + j) * n +   i];
+                    }
+                } else {
+                    for (int j = 0; j < d; j++) {
+                        // loop over coordinates
+                        Xout[(k * d + j) * n       + i]  = 0.0;
+                        Xout[((k + m) * d + j) * n + i]  = 0.0;
+                    }
                 }
             }
         }
     """
-    scipy.weave.inline(group_shrinkage, ['n', 'm', 'd', 'threshold', 'X', 'Z', 'Xshrunk'])
+    scipy.weave.inline(group_shrinkage, ['n', 'm', 'd', 'threshold', 'X', 'Z', 'Xout'])
 
     # Apply the soft-thresholding operator
-    return Xshrunk
+    return Xout
 
 
 def proj_l2_ball(X, m):
@@ -411,14 +399,11 @@ def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
     # ADMM loop
     for t in xrange(max_iter):
         # Encode all the data
-        #         FIXME:  2013-03-05 17:28:21 by Brian McFee <brm2132@columbia.edu>
-        #         move ridge down here 
-
         A       = __ridge(D, DX + rho * (Z - O), Dinv)
 
         # Apply the regularizer
-        Zold    = Z
-        Z       = reg(A + O, rho)
+        Zold    = Z.copy()
+        reg(A + O, rho, Xout=Z)
 
         # Update residual
         O       = O + A - Z
