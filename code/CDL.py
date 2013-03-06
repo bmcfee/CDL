@@ -48,7 +48,10 @@ def real2ToComplex(Y):
         complex d-by-n matrix X
     '''
     d = Y.shape[0] / 2
-    return Y[:d] + 1.j * Y[d:]
+    if Y.ndim > 1:
+        return Y[:d,:] + 1.j * Y[d:,:]
+    else:
+        return Y[:d] + 1.j * Y[d:]
 
 
 def diagsToColumns(Q):
@@ -153,30 +156,6 @@ def normalizeDictionary(D):
 #---                            ---#
 
 
-#--- Regression function        ---#
-def __ridge(A, rho, b, Z):
-    '''
-    Specialized ridge regression solver for Hadamard products.
-
-    Not for external use.
-
-    Input:
-        A:      2d-by-2dm
-        rho:    scalar > 0
-        b:      2dm
-        Z:      2d > 0,  == diag(inv(I + 1/rho * A * A.T))
-
-    Output:
-        X = 1/rho  *  (I - 1/rho * A' * Z * A) * b
-    '''
-    # FIXME:  2013-03-05 16:26:55 by Brian McFee <brm2132@columbia.edu>
-    # profile this on real data: make sure all strides and row/column-majorness is optimal     
-
-    # TODO:   2013-03-05 16:27:11 by Brian McFee <brm2132@columbia.edu>
-    #  move into the encoder proper to save stack frames
-
-    return (b - (A.T * (Z * (A * b)) / rho)) / rho
-#---                            ---#
 
 
 #--- Regularization functions   ---#
@@ -196,14 +175,33 @@ def reg_time_l1(X, rho, lam):
     raise Exception('not yet implemented')
     pass
 
-def reg_space_l1(X, rho, lam, w, h):
+def reg_space_l1(A, rho, lam, w, h):
     '''
         Spatial L1 sparsity: assumes each column of X is a columnsToVectord 2d-DFT of a 2d-signal
-    '''
-    #   TODO:   2013-03-04 08:29:21 by Brian McFee <brm2132@columbia.edu>
-    #   need to do iffts on each block independently
 
-    raise Exception('not yet implemented')
+        Input: 
+                A   = 2*d*m-by-n
+                rho > 0
+                lam > 0
+                w, h: d = w * h
+
+    '''
+
+    (d2m, n) = A.shape
+    d       = w * h
+    m       = d2m / (2 * d)
+
+    # Reshape activations, transform each one back into image space
+    Aspace  = numpy.fft.ifft2(numpy.reshape(real2ToComplex(A), (w, h, m, n), order='F'), axes=(0, 1)).real
+
+    # Apply shrinkage
+    Ashrunk           = Aspace - (lam / rho) * numpy.sign(Aspace)
+    Ashrunk[numpy.abs(Aspace) < (lam / rho)]    = 0
+
+    # Transform back, reshape, and separate real from imaginary
+    Atime               = numpy.reshape(numpy.fft.fft2(Ashrunk, axes=(0,1)), (w * h * m, n), order='F')
+
+    return complexToReal2(Atime)
     pass
 
 def reg_group_l2(X, rho, lam, m):
@@ -301,10 +299,34 @@ def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
     Dnorm   = (D * D.T).diagonal()
     Dinv    = scipy.sparse.spdiags( (1.0 + Dnorm / rho)**-1, 0, d, d)
 
+    #--- Regression function        ---#
+    def __ridge(_D, _b, _Z):
+        '''
+        Specialized ridge regression solver for Hadamard products.
+    
+        Not for external use.
+    
+        Input:
+            A:      2d-by-2dm
+            b:      2dm
+            Z:      2d > 0,  == diag(inv(I + 1/rho * A * A.T))
+
+        Output:
+            X = 1/rho  *  (I - 1/rho * A' * Z * A) * b
+        '''
+        # FIXME:  2013-03-05 16:26:55 by Brian McFee <brm2132@columbia.edu>
+        # profile this on real data: make sure all strides and row/column-majorness is optimal     
+    
+        return (_b - (_D.T * (_Z * (_D * _b)) / rho)) / rho
+    #---                            ---#
+
     # ADMM loop
     for t in xrange(max_iter):
         # Encode all the data
-        A       = __ridge(D, rho, DX + rho * (Z - O), Dinv)
+        #         FIXME:  2013-03-05 17:28:21 by Brian McFee <brm2132@columbia.edu>
+        #         move ridge down here 
+
+        A       = __ridge(D, DX + rho * (Z - O), Dinv)
 
         # Apply the regularizer
         Zold    = Z
