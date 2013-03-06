@@ -259,12 +259,7 @@ def reg_group_l2_weave(X, rho, lam, m):
                 // loop over codewords
 
                 for (int j = 0; j < d; j++) {
-                    // loop over codeword coordinates
-                    // Z[k,i] => Z[ (k * n) + i]
-                    // need to get the jth coefficient from the kth codeword
-                    //      k * d + j   <-- row number
-                    //          * n     <-- wrap around the columns
-                    //              +i  <-- ith data point
+                    // accumulate over codeword coordinates (real and imaginary)
                     Z[(k*n) + i]   
                                 +=      X[(k * d + j) * n       +   i]   
                                     *   X[(k * d + j) * n       +   i] 
@@ -283,17 +278,32 @@ def reg_group_l2_weave(X, rho, lam, m):
     ### 
     # soft-thresholding
 
-    # Avoid numerical underflow: these entries will get squashed to 0 in the mask anyway
-    Z[Z < (lam / rho)]  = lam / rho        
+    threshold   = lam / rho
+    Xshrunk     = numpy.zeros_like(X)
 
-    # Compute the soft-thresholding mask by group
-    mask                = numpy.maximum(0, 1 - (lam / rho) / Z)
-
-    # Duplicate each row of the mask, then tile it to catch the complex region
-    mask                = numpy.tile(numpy.repeat(mask, d, axis=0), (2, 1))
+    group_shrinkage =   r"""
+        for (int i = 0; i < n; i++) {
+            // loop over data points
+            for (int k = 0; k < m; k++) {
+                // loop over codewords
+                float scale = 0.0;
+                if (Z[(k*n) + i] > threshold) {
+                    scale = 1.0 - threshold / Z[(k*n) + i];
+                }
+                if (scale > 0.0) {
+                    for (int j = 0; j < d; j++) {
+                        // loop over coordinates
+                        Xshrunk[(k * d + j) * n       + i]  = scale *   X[(k * d + j) * n       +   i];
+                        Xshrunk[((k + m) * d + j) * n + i]  = scale *   X[((k + m) * d + j) * n +   i];
+                    }
+                }
+            }
+        }
+    """
+    scipy.weave.inline(group_shrinkage, ['n', 'm', 'd', 'threshold', 'X', 'Z', 'Xshrunk'])
 
     # Apply the soft-thresholding operator
-    return mask * X
+    return Xshrunk
 
 
 def proj_l2_ball(X, m):
