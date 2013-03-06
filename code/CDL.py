@@ -10,8 +10,8 @@ import numpy
 import scipy.linalg, scipy.sparse, scipy.sparse.linalg
 
 #--- magic numbers              ---#
-RHO_MIN     =   1e-6        # Minimum allowed scale for augmenting term rho
-RHO_MAX     =   1e6         # Maximum allowed scale for rho
+RHO_MIN     =   1e-4        # Minimum allowed scale for augmenting term rho
+RHO_MAX     =   1e4         # Maximum allowed scale for rho
 ABSTOL      =   1e-4        # absolute tolerance for convergence criteria
 RELTOL      =   1e-3        # relative tolerance
 MU          =   10.0        # maximum ratio between primal and dual residuals
@@ -495,7 +495,7 @@ def learn_dictionary(X, m, reg, max_steps=20, max_admm_steps=2000, D=None):
         print '__| D-step MSE=%.3e' %  numpy.mean((D * A - X)**2)
 
         # Normalize the codebook
-        D = normalizeDictionary(D)
+        #         D = normalizeDictionary(D)
         pass
 
     # Re-encode the data with the final codebook
