@@ -16,7 +16,7 @@ RHO_MIN     =   1e-4        # Minimum allowed scale for augmenting term rho
 RHO_MAX     =   1e4         # Maximum allowed scale for rho
 ABSTOL      =   1e-4        # absolute tolerance for convergence criteria
 RELTOL      =   1e-3        # relative tolerance
-MU          =   10.0        # maximum ratio between primal and dual residuals
+MU          =   3.0         # maximum ratio between primal and dual residuals
 TAU         =   2           # scaling factor for rho when primal/dual is off by more than MU
 T_CHECKUP   =   10          # number of steps between convergence tests and rho-rescaling
 #---                            ---#
@@ -563,7 +563,7 @@ def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
     m       = d2m / d2
 
     # Initialize ADMM variables
-    rho     = TAU ** 5                  # (MAGIC) Dictionary rho likes to get big
+    rho     = TAU ** 8                  # (MAGIC) Dictionary rho likes to get big
 
     D       = numpy.zeros( 2 * d * m )  # Unconstrained codebook
     E       = numpy.zeros_like(D)       # l2-constrained codebook
@@ -745,6 +745,8 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
         }
     }
 
+    Xnorm = numpy.mean(X ** 2)
+
     error = []
     for T in xrange(max_steps):
         # Encode the data
@@ -752,14 +754,16 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
         diagnostics['encoder'].append(A_diagnostics)
         
         error.append(numpy.mean((D * A - X)**2))
-        print '%2d| A-step MSE=%.3e' % (T, error[-1])
+        SNR = 10 * (numpy.log10(numpy.mean((D * A)**2)) - numpy.log10(error[-1]))
+        print '%2d| A-step MSE=%.3e   | SNR=%3.2fdB' % (T, error[-1], SNR)
 
         # Optimize the codebook
         (D, D_diagnostics) = dictionary(X, A, max_iter=max_admm_steps)
         diagnostics['dictionary'].append(D_diagnostics)
 
         error.append(numpy.mean((D * A - X)**2))
-        print '__| D-step MSE=%.3e' %  error[-1]
+        SNR = 10 * (numpy.log10(numpy.mean((D * A)**2)) - numpy.log10(error[-1]))
+        print '__| D-step MSE=%.3e   | SNR=%3.2fdB' %  (error[-1], SNR)
         pass
 
     diagnostics['error']    = numpy.array(error)
