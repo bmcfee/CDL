@@ -207,6 +207,83 @@ def reg_space_l1(A, rho, lam, w, h, Xout=None):
 
     return complexToReal2(Atime)
 
+def reg_l1(X, rho, lam, Xout=None):
+    '''
+    Input:  X:      2*d*m-by-n      matrix of codeword activations
+            rho:    augmented lagrangian scaling parameter
+            lam:    weight on the regularization term
+            Xout:   destination for the shrunken value
+
+    Output:
+            (lam/rho)*Group-l2 shrunken version of X
+    '''
+
+    (d2m, n)    = X.shape
+
+    dm          = d2m / 2
+
+    if Xout is None:
+        Xout = numpy.empty_like(X)
+        pass
+
+
+    threshold   = lam / rho
+
+    complex_shrinkage   = r"""
+        for (int i = 0; i < n; i++) {
+            // iterate over data points
+
+            for (int j = 0; j < dm ; j++) {
+                // iterate over activations
+
+                // compute magnitude
+                float mag   = sqrt(pow(X[j * n + i], 2) + pow(X[(j + dm) * n + i], 2));
+                float scale = (mag < threshold) ? 0.0 : ( 1 - threshold / mag);
+
+                // rescale
+                Xout[j * n    + i]  = scale * X[j * n    + i];
+                Xout[(j+dm)*n + i]  = scale * X[(j+dm)*n + i];
+            }
+        }
+    """
+    scipy.weave.inline(complex_shrinkage, ['n', 'dm', 'threshold', 'X', 'Xout'])
+
+    # Apply the soft-thresholding operator
+    return Xout
+
+def reg_l1_separate(X, rho, lam, Xout=None):
+    '''
+    Input:  X:      2*d*m-by-n      matrix of codeword activations
+            rho:    augmented lagrangian scaling parameter
+            lam:    weight on the regularization term
+            Xout:   destination for the shrunken value
+
+    Output:
+            (lam/rho)*Group-l2 shrunken version of X
+    '''
+    # FIXME:  2013-03-06 20:39:54 by Brian McFee <brm2132@columbia.edu>
+    #   shrinkage needs to apply to real + imaginary components simultaneously
+
+
+    if Xout is None:
+        Xout = numpy.empty_like(X)
+        pass
+
+    n2dm        = X.size
+
+    threshold   = lam / rho
+
+    shrinkage   = r"""
+        #define max(A, B) ( (A > B) ? A : B )
+        for (int i = 0; i < n2dm; i++) {
+            Xout[i] = max(0, X[i] - threshold) - max(0, - X[i] - threshold);
+        }
+    """
+    scipy.weave.inline(shrinkage, ['n2dm', 'threshold', 'X', 'Xout'])
+
+    # Apply the soft-thresholding operator
+    return Xout
+
 def reg_group_l2(X, rho, lam, m, Xout=None):
     '''
     Input:  X:      2*d*m-by-n      matrix of codeword activations
