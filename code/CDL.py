@@ -9,6 +9,7 @@ Convolutional Dictionary Learning
 import numpy
 import scipy.linalg, scipy.sparse, scipy.sparse.linalg
 import scipy.weave
+import functools
 
 #--- magic numbers              ---#
 RHO_MIN     =   1e-4        # Minimum allowed scale for augmenting term rho
@@ -19,45 +20,6 @@ MU          =   10.0        # maximum ratio between primal and dual residuals
 TAU         =   2           # scaling factor for rho when primal/dual is off by more than MU
 T_CHECKUP   =   10          # number of steps between convergence tests and rho-rescaling
 #---                            ---#
-
-#--- diagnostic output          ---#
-# FIXME:  2013-03-07 08:54:16 by Brian McFee <brm2132@columbia.edu>
-# restructure all of this 
-
-DIAGNOSTICS = {
-    'encoder':   {
-        'err_primal':   [],
-        'err_dual':     [],
-        'eps_primal':   [],
-        'eps_dual':     [],
-        'rho':          [],
-        'num_steps':    [],
-        'converged':    []
-    },
-    'dictionary':   {
-        'err_primal':   [],
-        'err_dual':     [],
-        'eps_primal':   [],
-        'eps_dual':     [],
-        'rho':          [],
-        'num_steps':    [],
-        'converged':    []
-    },
-    'factorization': {
-        'objective':  [],
-    }
-}
-
-def resetDiagnostics():
-    for key in DIAGNOSTICS:
-        for subkey in DIAGNOSTICS[key]:
-            DIAGNOSTICS[key][subkey] = []
-            pass
-        pass
-    pass
-#---                            ---#
-
-
 
 #--- Utility functions          ---#
 
@@ -513,12 +475,14 @@ def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
     #---                            ---#
 
     # diagnostics data
-    R_converged     = False
-    R_err_primal    = []
-    R_err_dual      = []
-    R_eps_primal    = []
-    R_eps_dual      = []
-    R_rho           = []
+    _DIAG     = {
+        'converged':    False,
+        'err_primal':   [],
+        'err_dual':     [],
+        'eps_primal':   [],
+        'eps_dual':     [],
+        'rho':          []
+    }
 
     # ADMM loop
     for t in xrange(max_iter):
@@ -544,14 +508,15 @@ def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
         eps_dual    = O.size**0.5 * ABSTOL + RELTOL * scipy.linalg.norm(O)
 
         # reporting
-        R_err_primal.append(ERR_primal)
-        R_err_dual.append(ERR_dual)
-        R_eps_primal.append(eps_primal)
-        R_eps_dual.append(eps_dual)
-        R_rho.append(rho)
+        _DIAG['err_primal'].append(ERR_primal)
+        _DIAG['err_dual'].append(ERR_dual)
+        _DIAG['eps_primal'].append(eps_primal)
+        _DIAG['eps_dual'].append(eps_dual)
+        _DIAG['rho'].append(rho)
+        
         
         if ERR_primal < eps_primal and ERR_dual <= eps_dual:
-            R_converged = True
+            _DIAG['converged']  = True
             break
 
         if not dynamic_rho:
@@ -578,14 +543,14 @@ def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
         pass
 
     # Append to diagnostics
-    DIAGNOSTICS['encoder']['err_primal' ].append(numpy.array(R_err_primal))
-    DIAGNOSTICS['encoder']['eps_primal' ].append(numpy.array(R_eps_primal))
-    DIAGNOSTICS['encoder']['err_dual'   ].append(numpy.array(R_err_dual))
-    DIAGNOSTICS['encoder']['eps_dual'   ].append(numpy.array(R_eps_dual))
-    DIAGNOSTICS['encoder']['rho'        ].append(numpy.array(R_rho))
-    DIAGNOSTICS['encoder']['num_steps'  ].append(t)
-    DIAGNOSTICS['encoder']['converged'  ].append(R_converged)
-    return Z
+    _DIAG['err_primal' ]    = numpy.array(_DIAG['err_primal'])
+    _DIAG['err_dual' ]      = numpy.array(_DIAG['err_dual'])
+    _DIAG['eps_primal' ]    = numpy.array(_DIAG['eps_primal'])
+    _DIAG['eps_dual' ]      = numpy.array(_DIAG['eps_dual'])
+    _DIAG['rho' ]           = numpy.array(_DIAG['rho'])
+    _DIAG['num_steps']      = t
+
+    return (Z, _DIAG)
 #---                            ---#
 
 #--- Dictionary                 ---#
@@ -637,12 +602,14 @@ def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
     SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(2 * d * m, 2 * d * m) + StS)
 
     # diagnostics data
-    R_converged     = False
-    R_err_primal    = []
-    R_err_dual      = []
-    R_eps_primal    = []
-    R_eps_dual      = []
-    R_rho           = []
+    _DIAG     = {
+        'converged':    False,
+        'err_primal':   [],
+        'err_dual':     [],
+        'eps_primal':   [],
+        'eps_dual':     [],
+        'rho':          []
+    }
 
     for t in xrange(max_iter):
         # Solve for the unconstrained codebook
@@ -667,14 +634,14 @@ def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
         eps_dual    = (W.size**0.5) * ABSTOL + RELTOL * scipy.linalg.norm(W)
         
         # reporting
-        R_err_primal.append(ERR_primal)
-        R_err_dual.append(ERR_dual)
-        R_eps_primal.append(eps_primal)
-        R_eps_dual.append(eps_dual)
-        R_rho.append(rho)
+        _DIAG['err_primal'].append(ERR_primal)
+        _DIAG['err_dual'].append(ERR_dual)
+        _DIAG['eps_primal'].append(eps_primal)
+        _DIAG['eps_dual'].append(eps_dual)
+        _DIAG['rho'].append(rho)
         
         if ERR_primal < eps_primal and ERR_dual <= eps_dual:
-            R_converged = True
+            _DIAG['converged'] = True
             break
 
         if not dynamic_rho:
@@ -696,18 +663,17 @@ def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
             pass
         pass
 
-    # Append to diagnostics
-    DIAGNOSTICS['dictionary']['err_primal' ].append(numpy.array(R_err_primal))
-    DIAGNOSTICS['dictionary']['eps_primal' ].append(numpy.array(R_eps_primal))
-    DIAGNOSTICS['dictionary']['err_dual'   ].append(numpy.array(R_err_dual))
-    DIAGNOSTICS['dictionary']['eps_dual'   ].append(numpy.array(R_eps_dual))
-    DIAGNOSTICS['dictionary']['rho'        ].append(numpy.array(R_rho))
-    DIAGNOSTICS['dictionary']['num_steps'  ].append(t)
-    DIAGNOSTICS['dictionary']['converged'  ].append(R_converged)
+    # Numpyfy the diagnostics
+    _DIAG['err_primal' ]    = numpy.array(_DIAG['err_primal'])
+    _DIAG['err_dual' ]      = numpy.array(_DIAG['err_dual'])
+    _DIAG['eps_primal' ]    = numpy.array(_DIAG['eps_primal'])
+    _DIAG['eps_dual' ]      = numpy.array(_DIAG['eps_dual'])
+    _DIAG['rho' ]           = numpy.array(_DIAG['rho'])
+    _DIAG['num_steps']      = t
 
     # XXX:    2013-03-06 14:49:59 by Brian McFee <brm2132@columbia.edu>
     #  diags construction
-    return columnsToDiags(vectorToColumns(E, m))
+    return (columnsToDiags(vectorToColumns(E, m)), _DIAG)
 #---                            ---#
 
 #--- Alternating minimization   ---#
@@ -716,12 +682,12 @@ def learn_dictionary(X, m, reg, max_steps=20, max_admm_steps=2000, D=None):
     Alternating minimization to learn convolutional dictionary
 
     Input:
-        X:      2d-by-n     data matrix, real/imaginary-separated
-        m:      number of filters to learn
-        reg:    regularization function handle
+        X:              2d-by-n     data matrix, real/imaginary-separated
+        m:              number of filters to learn
+        reg:            regularization function handle
         max_steps:      number of outer-loop steps
         max_admm_steps: number of inner loop steps
-        D:      initial codebook
+        D:              initial codebook
 
     Output:
         (D, A) where X ~= D * A
@@ -737,24 +703,28 @@ def learn_dictionary(X, m, reg, max_steps=20, max_admm_steps=2000, D=None):
         pass
 
     # Reset the diagnostics output
-    resetDiagnostics()
-
+    diagnostics   = {
+        'encoder':          [],
+        'dictionary':       [],
+    }
 
     for T in xrange(max_steps):
         # Encode the data
-        A = encoder(X, D, reg, max_iter=max_admm_steps)
+        (A, A_diagnostics) = encoder(X, D, reg, max_iter=max_admm_steps)
+        diagnostics['encoder'].append(A_diagnostics)
+        
         error    = numpy.mean((D * A - X)**2)
-        DIAGNOSTICS['factorization']['objective'].append(error)
         print '%2d| A-step MSE=%.3e' % (T, error)
 
         # Optimize the codebook
-        D = dictionary(X, A, max_iter=max_admm_steps)
+        (D, D_diagnostics) = dictionary(X, A, max_iter=max_admm_steps)
+        diagnostics['dictionary'].append(D_diagnostics)
+
         error    = numpy.mean((D * A - X)**2)
-        DIAGNOSTICS['factorization']['objective'].append(error)
         print '__| D-step MSE=%.3e' %  error
         pass
 
     # Re-encode the data with the final codebook
-    A = encoder(X, D, reg, max_iter=max_admm_steps)
-    return (D, A)
+    (A, A_diagnostics) = encoder(X, D, reg, max_iter=max_admm_steps)
+    return (D, A, diagnostics)
 #---                            ---#
