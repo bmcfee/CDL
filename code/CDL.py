@@ -432,7 +432,7 @@ def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
     O   = numpy.zeros( (d*m, n) )
 
     # Initialize augmented lagrangian weight
-    rho = 1.0
+    rho = TAU ** -5             # (MAGIC) Encoder rho wants to start small
 
     # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
     #  sparse multiply ~= hadamard multiply
@@ -563,7 +563,7 @@ def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
     m       = d2m / d2
 
     # Initialize ADMM variables
-    rho     = 1.0
+    rho     = TAU ** 5                  # (MAGIC) Dictionary rho likes to get big
 
     D       = numpy.zeros( 2 * d * m )  # Unconstrained codebook
     E       = numpy.zeros_like(D)       # l2-constrained codebook
