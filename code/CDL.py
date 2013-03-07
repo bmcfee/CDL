@@ -262,9 +262,6 @@ def reg_l1_separate(X, rho, lam, Xout=None):
     Output:
             (lam/rho)*Group-l2 shrunken version of X
     '''
-    # FIXME:  2013-03-06 20:39:54 by Brian McFee <brm2132@columbia.edu>
-    #   shrinkage needs to apply to real + imaginary components simultaneously
-
 
     if Xout is None:
         Xout = numpy.empty_like(X)
@@ -554,6 +551,10 @@ def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
 #---                            ---#
 
 #--- Dictionary                 ---#
+# FIXME:  2013-03-07 17:50:02 by Brian McFee <brm2132@columbia.edu>
+# convergence is slow here...
+#   i wonder if normalizing StS, StX by n would make things behave better?
+
 def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
 
     (d2, n) = X.shape
@@ -591,7 +592,7 @@ def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
             #  sparse multiply ~= hadamard multiply
             StS         = StS + Si.T * Si
             pass
-        return (StS, StX)
+        return (StS / n, StX / n)
 
     (StS, StX) = __aggregator()
 
@@ -754,7 +755,7 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
         diagnostics['encoder'].append(A_diagnostics)
         
         error.append(numpy.mean((D * A - X)**2))
-        SNR = 10 * (numpy.log10(numpy.mean((D * A)**2)) - numpy.log10(error[-1]))
+        SNR = 10 * (numpy.log10(Xnorm) - numpy.log10(error[-1]))
         print '%2d| A-step MSE=%.3e   | SNR=%3.2fdB' % (T, error[-1], SNR)
 
         # Optimize the codebook
@@ -762,7 +763,7 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
         diagnostics['dictionary'].append(D_diagnostics)
 
         error.append(numpy.mean((D * A - X)**2))
-        SNR = 10 * (numpy.log10(numpy.mean((D * A)**2)) - numpy.log10(error[-1]))
+        SNR = 10 * (numpy.log10(Xnorm) - numpy.log10(error[-1]))
         print '__| D-step MSE=%.3e   | SNR=%3.2fdB' %  (error[-1], SNR)
         pass
 
