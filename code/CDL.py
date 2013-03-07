@@ -677,20 +677,25 @@ def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
 #---                            ---#
 
 #--- Alternating minimization   ---#
-def learn_dictionary(X, m, reg, max_steps=20, max_admm_steps=2000, D=None):
+def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps=2000, D=None):
     '''
     Alternating minimization to learn convolutional dictionary
 
     Input:
         X:              2d-by-n     data matrix, real/imaginary-separated
         m:              number of filters to learn
-        reg:            regularization function handle
+        reg:            regularization function. One of the following
+
+                l2_group        l2 norm of codeword activations     (Default)
+                l1              l1 norm of codeword activations (in frequency domain)
+                l1_separate     l1 norm of codeword activations, real + imaginary components
+
         max_steps:      number of outer-loop steps
         max_admm_steps: number of inner loop steps
         D:              initial codebook
 
     Output:
-        (D, A) where X ~= D * A
+        (D, A, diagnostics) where X ~= D * A
     '''
 
     (d2, n) = X.shape
@@ -699,32 +704,68 @@ def learn_dictionary(X, m, reg, max_steps=20, max_admm_steps=2000, D=None):
     if D is None:
         # Pick m random columns from the input
         D = X[:, numpy.random.randint(0, n, m)]
+
+        #   could be dangerous to normalize if we hit a small column.
+        #   random noise should fix it
+        D = D + 0.01 * (numpy.random.randn(D.shape[0], D.shape[1])**2)
+
         D = normalizeDictionary(columnsToDiags(D))
         pass
+
+    if reg == 'l2_group':
+        g   = functools.partial(reg_group_l2, lam=lam, m=m)
+    elif reg == 'l1':
+        g   = functools.partial(reg_l1, lam=lam)
+    elif reg == 'l1_separate':
+        g   = functools.partial(reg_l1_separate, lam=lam)
+    else:
+        raise ValueError('Unknown regularization: %s' % reg)
 
     # Reset the diagnostics output
     diagnostics   = {
         'encoder':          [],
         'dictionary':       [],
+        'parameters':       {
+            'n':                X.shape[1],
+            'd':                X.shape[0] / 2,
+            'm':                m,
+            'reg':              reg,
+            'lam':              lam,
+            'max_steps':        max_steps,
+            'max_admm_steps':   max_admm_steps
+        },
+        'globals':  {
+            'rho_min':      RHO_MIN,
+            'rho_max':      RHO_MAX,
+            'abs_tol':      ABSTOL,
+            'rel_tol':      RELTOL,
+            'mu':           MU,
+            'tau':          TAU,
+            't_checkup':    T_CHECKUP
+        }
     }
 
+    error = []
     for T in xrange(max_steps):
         # Encode the data
-        (A, A_diagnostics) = encoder(X, D, reg, max_iter=max_admm_steps)
+        (A, A_diagnostics) = encoder(X, D, g, max_iter=max_admm_steps)
         diagnostics['encoder'].append(A_diagnostics)
         
-        error    = numpy.mean((D * A - X)**2)
-        print '%2d| A-step MSE=%.3e' % (T, error)
+        error.append(numpy.mean((D * A - X)**2))
+        print '%2d| A-step MSE=%.3e' % (T, error[-1])
 
         # Optimize the codebook
         (D, D_diagnostics) = dictionary(X, A, max_iter=max_admm_steps)
         diagnostics['dictionary'].append(D_diagnostics)
 
-        error    = numpy.mean((D * A - X)**2)
-        print '__| D-step MSE=%.3e' %  error
+        error.append(numpy.mean((D * A - X)**2))
+        print '__| D-step MSE=%.3e' %  error[-1]
         pass
 
+    diagnostics['error']    = numpy.array(error)
+
     # Re-encode the data with the final codebook
-    (A, A_diagnostics) = encoder(X, D, reg, max_iter=max_admm_steps)
+    (A, A_diagnostics) = encoder(X, D, g, max_iter=max_admm_steps)
+    diagnostics['final_encoder'] = A_diagnostics
     return (D, A, diagnostics)
 #---                            ---#
