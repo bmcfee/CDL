@@ -162,7 +162,7 @@ def normalizeDictionary(D):
 
 
 #--- Regularization functions   ---#
-def reg_time_l1(X, rho, lam):
+def reg_l1_time(X, rho, lam, Xout=None):
     '''
         Temporal L1 sparsity: assumes each column of X is (DFT) of a time-series.
 
@@ -178,7 +178,7 @@ def reg_time_l1(X, rho, lam):
     raise Exception('not yet implemented')
     pass
 
-def reg_space_l1(A, rho, lam, w, h, Xout=None):
+def reg_l1_space(A, rho, lam, width=None, height=None, Xout=None):
     '''
         Spatial L1 sparsity: assumes each column of X is a columnsToVectord 2d-DFT of a 2d-signal
 
@@ -190,25 +190,27 @@ def reg_space_l1(A, rho, lam, w, h, Xout=None):
                 Xout:   destination (must be same shape as A)
 
     '''
-    raise Exception('not yet implemented')
 
     (d2m, n) = A.shape
-    d       = w * h
+    d       = width * height
     m       = d2m / (2 * d)
 
+    if Xout is None:
+        Xout = numpy.empty_like(A)
+        pass
+
     # Reshape activations, transform each one back into image space
-    Aspace  = numpy.fft.ifft2(numpy.reshape(real2ToComplex(A), (w, h, m, n), order='F'), axes=(0, 1)).real
+    Aspace  = numpy.fft.ifft2(numpy.reshape(real2ToComplex(A), (width, height, m, n), order='F'), axes=(0, 1)).real
 
     # Apply shrinkage
-    Ashrunk           = Aspace - (lam / rho) * numpy.sign(Aspace)
-    Ashrunk[numpy.abs(Aspace) < (lam / rho)]    = 0
+    reg_l1_real(Aspace, rho, lam, Xout=Aspace)
 
     # Transform back, reshape, and separate real from imaginary
-    Atime               = numpy.reshape(numpy.fft.fft2(Ashrunk, axes=(0,1)), (w * h * m, n), order='F')
+    Xout[:] = complexToReal2(numpy.reshape(numpy.fft.fft2(Aspace, axes=(0,1)), (width * height * m, n), order='F'))[:]
 
-    return complexToReal2(Atime)
+    return Xout
 
-def reg_l1(X, rho, lam, Xout=None):
+def reg_l1_complex(X, rho, lam, Xout=None):
     '''
     Input:  X:      2*d*m-by-n      matrix of codeword activations
             rho:    augmented lagrangian scaling parameter
@@ -217,6 +219,10 @@ def reg_l1(X, rho, lam, Xout=None):
 
     Output:
             (lam/rho)*Group-l2 shrunken version of X
+
+    Note:
+            This function applies shrinkage toward the disk in the complex plane.
+            For the standard l1 shrinkage operator, see reg_l1_real.
     '''
 
     (d2m, n)    = X.shape
@@ -252,7 +258,7 @@ def reg_l1(X, rho, lam, Xout=None):
     # Apply the soft-thresholding operator
     return Xout
 
-def reg_l1_separate(X, rho, lam, Xout=None):
+def reg_l1_real(X, rho, lam, Xout=None):
     '''
     Input:  X:      2*d*m-by-n      matrix of codeword activations
             rho:    augmented lagrangian scaling parameter
@@ -267,22 +273,22 @@ def reg_l1_separate(X, rho, lam, Xout=None):
         Xout = numpy.empty_like(X)
         pass
 
-    n2dm        = X.size
+    numel       = X.size
 
     threshold   = lam / rho
 
     shrinkage   = r"""
         #define max(A, B) ( (A > B) ? A : B )
-        for (int i = 0; i < n2dm; i++) {
+        for (int i = 0; i < numel; i++) {
             Xout[i] = max(0, X[i] - threshold) - max(0, - X[i] - threshold);
         }
     """
-    scipy.weave.inline(shrinkage, ['n2dm', 'threshold', 'X', 'Xout'])
+    scipy.weave.inline(shrinkage, ['numel', 'threshold', 'X', 'Xout'])
 
     # Apply the soft-thresholding operator
     return Xout
 
-def reg_group_l2(X, rho, lam, m, Xout=None):
+def reg_l2_group(X, rho, lam, m, Xout=None):
     '''
     Input:  X:      2*d*m-by-n      matrix of codeword activations
             rho:    augmented lagrangian scaling parameter
@@ -410,7 +416,7 @@ def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
         reg:        regularization function.
 
                     Example:
-                    reg = functools.partial(CDL.reg_group_l2, lam=0.5, m=num_codewords)
+                    reg = functools.partial(CDL.reg_l2_group, lam=0.5, m=num_codewords)
 
         max_iter:   # of iterations to run the encoder  (Default: 30)
 
@@ -678,23 +684,30 @@ def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
 #---                            ---#
 
 #--- Alternating minimization   ---#
-def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps=2000, D=None):
+def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps=2000, D=None, **kwargs):
     '''
     Alternating minimization to learn convolutional dictionary
 
     Input:
         X:              2d-by-n     data matrix, real/imaginary-separated
         m:              number of filters to learn
-        reg:            regularization function. One of the following
+        reg:            regularizer for activations. One of the following:
 
-                l2_group        l2 norm of codeword activations     (Default)
-                l1              l1 norm of codeword activations (in frequency domain)
-                l1_separate     l1 norm of codeword activations, real + imaginary components
+                l2_group        l2 norm per activation map (Default)
+                l1              l1 norm per (complex) activation map
+                l1_time         l1 norm of codeword activations in time domain (1d activations)
+                l1_space        l1 norm of codeword activations in space domain (2d activations)
+
 
         max_steps:      number of outer-loop steps
         max_admm_steps: number of inner loop steps
         D:              initial codebook
 
+        kwargs:         Additional keyword arguments to be supplied to regularizer functions
+
+                l1_space:
+                    width:      width of the activation patch
+                    height:     width of the activation patch
     Output:
         (D, A, diagnostics) where X ~= D * A
     '''
@@ -714,11 +727,13 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
         pass
 
     if reg == 'l2_group':
-        g   = functools.partial(reg_group_l2, lam=lam, m=m)
+        g   = functools.partial(reg_l2_group, lam=lam, m=m)
     elif reg == 'l1':
-        g   = functools.partial(reg_l1, lam=lam)
-    elif reg == 'l1_separate':
-        g   = functools.partial(reg_l1_separate, lam=lam)
+        g   = functools.partial(reg_l1_complex, lam=lam)
+    elif reg == 'l1_time':
+        g   = functools.partial(reg_l1_time, lam=lam)
+    elif reg == 'l1_space':
+        g   = functools.partial(reg_l1_space, lam=lam, **kwargs)
     else:
         raise ValueError('Unknown regularization: %s' % reg)
 
