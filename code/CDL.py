@@ -699,9 +699,7 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
                 l2_group        l2 norm per activation map (Default)
                 l1              l1 norm per (complex) activation map
                 l1_time         l1 norm of codeword activations in time domain (1d activations)
-                l1_time_nn      as above, but retain only non-negative portion
                 l1_space        l1 norm of codeword activations in space domain (2d activations)
-                l1_space_nn     as above, but retain only non-negative portion
 
 
         max_steps:      number of outer-loop steps
@@ -737,12 +735,8 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
         g   = functools.partial(reg_l1_complex, lam=lam)
     elif reg == 'l1_time':
         g   = functools.partial(reg_l1_time, lam=lam)
-    elif reg == 'l1_time_nn':
-        g   = functools.partial(reg_l1_time, lam=lam, nonneg=True)
     elif reg == 'l1_space':
         g   = functools.partial(reg_l1_space, lam=lam, **kwargs)
-    elif reg == 'l1_space_nn':
-        g   = functools.partial(reg_l1_space, lam=lam, nonneg=True, **kwargs)
     else:
         raise ValueError('Unknown regularization: %s' % reg)
 
