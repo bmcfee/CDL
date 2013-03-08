@@ -162,7 +162,7 @@ def normalizeDictionary(D):
 
 
 #--- Regularization functions   ---#
-def reg_l1_real(X, rho, lam, Xout=None):
+def reg_l1_real(X, rho, lam, nonneg=False, Xout=None):
     '''
     Input:  X:      2*d*m-by-n      matrix of codeword activations
             rho:    augmented lagrangian scaling parameter
@@ -186,13 +186,11 @@ def reg_l1_real(X, rho, lam, Xout=None):
     threshold   = lam / rho
 
     shrinkage   = r"""
-        #define max(A, B) ( (A > B) ? A : B )
-
         for (int i = 0; i < numel; i++) {
-            Xout[i] = (X[i] - threshold > 0) ? (X[i] - threshold) : ((X[i] + threshold < 0) ? (X[i] + threshold) : 0);
+            Xout[i] = (X[i] - threshold > 0.0) ? (X[i] - threshold) : ((nonneg == 0 && X[i] + threshold < 0.0) ? (X[i] + threshold) : 0.0);
         }
     """
-    scipy.weave.inline(shrinkage, ['numel', 'threshold', 'X', 'Xout'])
+    scipy.weave.inline(shrinkage, ['numel', 'threshold', 'X', 'Xout', 'nonneg'])
 
     # Apply the soft-thresholding operator
     return Xout
@@ -213,7 +211,7 @@ def reg_l1_time(X, rho, lam, Xout=None):
     raise Exception('not yet implemented')
     pass
 
-def reg_l1_space(A, rho, lam, width=None, height=None, Xout=None):
+def reg_l1_space(A, rho, lam, width=None, height=None, nonneg=False, Xout=None):
     '''
         Spatial L1 sparsity: assumes each column of X is a columnsToVectord 2d-DFT of a 2d-signal
 
@@ -238,7 +236,7 @@ def reg_l1_space(A, rho, lam, width=None, height=None, Xout=None):
     Aspace  = numpy.fft.ifft2(numpy.reshape(real2ToComplex(A), (height, width, m, n), order='F'), axes=(0, 1)).real
 
     # Apply shrinkage
-    reg_l1_real(Aspace, rho, lam, Xout=Aspace)
+    reg_l1_real(Aspace, rho, lam, nonneg, Xout=Aspace)
 
     # Transform back, reshape, and separate real from imaginary
     Xout[:] = complexToReal2(numpy.reshape(numpy.fft.fft2(Aspace, axes=(0,1)), (height * width * m, n), order='F'))[:]
@@ -701,7 +699,9 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
                 l2_group        l2 norm per activation map (Default)
                 l1              l1 norm per (complex) activation map
                 l1_time         l1 norm of codeword activations in time domain (1d activations)
+                l1_time_nn      as above, but retain only non-negative portion
                 l1_space        l1 norm of codeword activations in space domain (2d activations)
+                l1_space_nn     as above, but retain only non-negative portion
 
 
         max_steps:      number of outer-loop steps
@@ -737,8 +737,12 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
         g   = functools.partial(reg_l1_complex, lam=lam)
     elif reg == 'l1_time':
         g   = functools.partial(reg_l1_time, lam=lam)
+    elif reg == 'l1_time_nn':
+        g   = functools.partial(reg_l1_time, lam=lam, nonneg=True)
     elif reg == 'l1_space':
         g   = functools.partial(reg_l1_space, lam=lam, **kwargs)
+    elif reg == 'l1_space_nn':
+        g   = functools.partial(reg_l1_space, lam=lam, nonneg=True, **kwargs)
     else:
         raise ValueError('Unknown regularization: %s' % reg)
 
