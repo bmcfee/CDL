@@ -162,6 +162,41 @@ def normalizeDictionary(D):
 
 
 #--- Regularization functions   ---#
+def reg_l1_real(X, rho, lam, Xout=None):
+    '''
+    Input:  X:      2*d*m-by-n      matrix of codeword activations
+            rho:    augmented lagrangian scaling parameter
+            lam:    weight on the regularization term
+            Xout:   destination for the shrunken value
+
+    Output:
+            (lam/rho)*Group-l2 shrunken version of X
+
+    Note:
+            This routine exists for use within reg_l1_time and reg_l1_space.
+            Not to be used directly.
+    '''
+
+    if Xout is None:
+        Xout = numpy.empty_like(X, order='F')
+        pass
+
+    numel       = X.size
+
+    threshold   = lam / rho
+
+    shrinkage   = r"""
+        #define max(A, B) ( (A > B) ? A : B )
+
+        for (int i = 0; i < numel; i++) {
+            Xout[i] = (X[i] - threshold > 0) ? (X[i] - threshold) : ((X[i] + threshold < 0) ? (X[i] + threshold) : 0);
+        }
+    """
+    scipy.weave.inline(shrinkage, ['numel', 'threshold', 'X', 'Xout'])
+
+    # Apply the soft-thresholding operator
+    return Xout
+
 def reg_l1_time(X, rho, lam, Xout=None):
     '''
         Temporal L1 sparsity: assumes each column of X is (DFT) of a time-series.
@@ -200,14 +235,13 @@ def reg_l1_space(A, rho, lam, width=None, height=None, Xout=None):
         pass
 
     # Reshape activations, transform each one back into image space
-    Aspace  = numpy.fft.ifft2(numpy.reshape(real2ToComplex(A), (width, height, m, n), order='F'), axes=(0, 1)).real
+    Aspace  = numpy.fft.ifft2(numpy.reshape(real2ToComplex(A), (height, width, m, n), order='F'), axes=(0, 1)).real
 
     # Apply shrinkage
     reg_l1_real(Aspace, rho, lam, Xout=Aspace)
 
     # Transform back, reshape, and separate real from imaginary
-    Xout[:] = complexToReal2(numpy.reshape(numpy.fft.fft2(Aspace, axes=(0,1)), (width * height * m, n), order='F'))[:]
-
+    Xout[:] = complexToReal2(numpy.reshape(numpy.fft.fft2(Aspace, axes=(0,1)), (height * width * m, n), order='F'))[:]
     return Xout
 
 def reg_l1_complex(X, rho, lam, Xout=None):
@@ -258,35 +292,6 @@ def reg_l1_complex(X, rho, lam, Xout=None):
     # Apply the soft-thresholding operator
     return Xout
 
-def reg_l1_real(X, rho, lam, Xout=None):
-    '''
-    Input:  X:      2*d*m-by-n      matrix of codeword activations
-            rho:    augmented lagrangian scaling parameter
-            lam:    weight on the regularization term
-            Xout:   destination for the shrunken value
-
-    Output:
-            (lam/rho)*Group-l2 shrunken version of X
-    '''
-
-    if Xout is None:
-        Xout = numpy.empty_like(X)
-        pass
-
-    numel       = X.size
-
-    threshold   = lam / rho
-
-    shrinkage   = r"""
-        #define max(A, B) ( (A > B) ? A : B )
-        for (int i = 0; i < numel; i++) {
-            Xout[i] = max(0, X[i] - threshold) - max(0, - X[i] - threshold);
-        }
-    """
-    scipy.weave.inline(shrinkage, ['numel', 'threshold', 'X', 'Xout'])
-
-    # Apply the soft-thresholding operator
-    return Xout
 
 def reg_l2_group(X, rho, lam, m, Xout=None):
     '''
@@ -721,7 +726,7 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
 
         #   could be dangerous to normalize if we hit a small column.
         #   random noise should fix it
-        D = D + 0.01 * (numpy.random.randn(D.shape[0], D.shape[1])**2)
+        D = D + 0.1 * numpy.random.randn(D.shape[0], D.shape[1])**2
 
         D = normalizeDictionary(columnsToDiags(D))
         pass
