@@ -729,6 +729,22 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
         D = normalizeDictionary(columnsToDiags(D))
         pass
 
+    # FIXME:  2013-03-08 08:35:06 by Brian McFee <brm2132@columbia.edu>
+    #   l1_time should be a special case of l1_space with W=1.
+    #   maybe be careful with fftn parameters here...
+
+    # TODO:   2013-03-08 08:35:57 by Brian McFee <brm2132@columbia.edu>
+    #   supervised regularization should be compatible with all other regs
+    #   write a wrapper that squashes all offending coefficients to 0, then
+    #   calls the specific regularizers
+    #   will need to take Y as an auxiliary parameter...
+
+    # TODO:   2013-03-08 08:37:09 by Brian McFee <brm2132@columbia.edu>
+    #   parallelization:
+    #   should not be difficult in the A-step
+    #   one catch: when carving up the data, we'll need a separate supervised
+    #   regularizer for each worker thread since the Y auxiliary parameter will change
+
     if reg == 'l2_group':
         g   = functools.partial(reg_l2_group, lam=lam, m=m)
     elif reg == 'l1':
@@ -751,7 +767,8 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
             'reg':              reg,
             'lam':              lam,
             'max_steps':        max_steps,
-            'max_admm_steps':   max_admm_steps
+            'max_admm_steps':   max_admm_steps,
+            'auxiliary':        kwargs
         },
         'globals':  {
             'rho_min':      RHO_MIN,
