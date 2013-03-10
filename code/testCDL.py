@@ -3,6 +3,11 @@
 
 import CDL
 import numpy
+import numpy.fft
+import functools
+
+# short-cut for numerical tolerance
+EQ = functools.partial(numpy.allclose, atol=1e-6, rtol=1e-4)
 
 #-- Utility functions --#
 def test_complexToReal2():
@@ -18,8 +23,8 @@ def test_complexToReal2():
                 X_cplx.shape[1]      == X_real2.shape[1])
 
         # Verify numerical match
-        assert (numpy.allclose(X_cplx.real, X_real2[:d, :]) and
-                numpy.allclose(X_cplx.imag, X_real2[d:, :]))
+        assert (EQ(X_cplx.real, X_real2[:d, :]) and
+                EQ(X_cplx.imag, X_real2[d:, :]))
         pass
 
     for d in 2**numpy.arange(0, 12, 2):
@@ -41,8 +46,8 @@ def test_real2ToComplex():
                 X_cplx.shape[1]      == X_real2.shape[1])
 
         # Verify numerical match
-        assert (numpy.allclose(X_cplx.real, X_real2[:d, :]) and
-                numpy.allclose(X_cplx.imag, X_real2[d:, :]))
+        assert (EQ(X_cplx.real, X_real2[:d, :]) and
+                EQ(X_cplx.imag, X_real2[d:, :]))
         pass
 
     for d in 2**numpy.arange(0, 12, 2):
@@ -67,12 +72,12 @@ def test_columnsToDiags():
         for k in range(m):
             for j in range(d):
                 # Verify A
-                assert (numpy.allclose(A[j, k], Q[j, k * d + j]) and
-                        numpy.allclose(A[j, k], Q[d + j, m * d + k *d + j]))
+                assert (EQ(A[j, k], Q[j, k * d + j]) and
+                        EQ(A[j, k], Q[d + j, m * d + k *d + j]))
 
                 # Verify B
-                assert (numpy.allclose(B[j, k], - Q[j, m * d + k * d + j]) and
-                        numpy.allclose(B[j, k], Q[d + j, k *d + j]))
+                assert (EQ(B[j, k], - Q[j, m * d + k * d + j]) and
+                        EQ(B[j, k], Q[d + j, k *d + j]))
                 pass
             pass
         pass
@@ -90,7 +95,7 @@ def test_diagsToColumns():
         X = numpy.random.randn(2 * d, m)
         Q = CDL.columnsToDiags(X)
         X_back  = CDL.diagsToColumns(Q)
-        assert numpy.allclose(X, X_back)
+        assert EQ(X, X_back)
         pass
 
     for d in 2**numpy.arange(0, 8, 2):
@@ -117,8 +122,8 @@ def test_columnsToVector():
         # B[:,k] => V[d * (m + k) : d * (m + k + 1)]
         for k in range(m):
             # We need to flatten here due to matrix/vector subscripting
-            assert (numpy.allclose(A[:, k], V[k*d:(k + 1)*d].flatten()) and
-                    numpy.allclose(B[:, k], V[(m + k)*d:(m + k + 1)*d].flatten()))
+            assert (EQ(A[:, k], V[k*d:(k + 1)*d].flatten()) and
+                    EQ(B[:, k], V[(m + k)*d:(m + k + 1)*d].flatten()))
             pass
         pass
 
@@ -136,7 +141,7 @@ def test_vectorToColumns():
         V = CDL.columnsToVector(X)
         X_back = CDL.vectorToColumns(V, m)
 
-        assert numpy.allclose(X, X_back)
+        assert EQ(X, X_back)
         pass
 
     for d in 2**numpy.arange(0, 8, 2):
@@ -161,7 +166,7 @@ def test_normalizeDictionary():
 
         # 1. verify unit norms
         norms   = numpy.sum(N_X**2, axis=0)**0.5
-        assert numpy.allclose(norms, numpy.ones_like(norms))
+        assert EQ(norms, numpy.ones_like(norms))
 
         # 2. verify that directions are correct:
         #       projection onto the normalized basis should equal norm 
@@ -169,7 +174,7 @@ def test_normalizeDictionary():
         norms_orig = numpy.sum(X**2, axis=0)**0.5
         projection = numpy.sum(X * N_X, axis=0)
 
-        assert numpy.allclose(norms_orig, projection)
+        assert EQ(norms_orig, projection)
         pass
 
     for d in 2**numpy.arange(0, 8, 2):
@@ -216,10 +221,10 @@ def test_proj_l2_ball():
             assert X_proj_norms[k] <= 1.0 + 1e-10
 
             # 2. verify that points with R < 1 were untouched
-            assert R[k] > 1.0 or numpy.allclose(X_proj[:, k], X_scale[:, k])
+            assert R[k] > 1.0 or EQ(X_proj[:, k], X_scale[:, k])
 
             # 3. verify that points with R >= 1.0 preserve direction
-            assert R[k] < 1.0 or numpy.allclose(Xdot[k], X_scale_norms[k])
+            assert R[k] < 1.0 or EQ(Xdot[k], X_scale_norms[k])
 
         pass
 
@@ -246,13 +251,13 @@ def test_reg_l1_real():
         # First, test without pre-allocation
         Xout = CDL.reg_l1_real(X, rho, lam, nonneg)
 
-        assert numpy.allclose(Xout, Xshrunk)
+        assert EQ(Xout, Xshrunk)
 
         # Now test with pre-allocation
         Xout_pre = numpy.zeros_like(X, order='A')
         CDL.reg_l1_real(X, rho, lam, nonneg, Xout_pre)
 
-        assert numpy.allclose(Xout_pre, Xshrunk)
+        assert EQ(Xout_pre, Xshrunk)
         pass
 
     for d in 2**numpy.arange(0, 4):
@@ -291,13 +296,13 @@ def test_reg_l1_complex():
         # First, test without pre-allocation
         Xout = CDL.reg_l1_complex(X, rho, lam)
 
-        assert numpy.allclose(Xout, Xshrunk)
+        assert EQ(Xout, Xshrunk, rtol=1e-3, atol=1e-6)
 
         # Now test with pre-allocation
         Xout_pre = numpy.zeros_like(X, order='A')
         CDL.reg_l1_complex(X, rho, lam, Xout_pre)
 
-        assert numpy.allclose(Xout_pre, Xshrunk)
+        assert EQ(Xout_pre, Xshrunk, rtol=1e-3, atol=1e-6)
         pass
 
     for d in 2**numpy.arange(0, 4):
@@ -339,21 +344,80 @@ def test_reg_l2_group():
 
         # First, test without pre-allocation
         Xout = CDL.reg_l2_group(X, rho, lam, m)
-        assert numpy.allclose(Xout, Xshrunk)
+        assert EQ(Xout, Xshrunk)
 
         # Now test with pre-allocation
 
         Xout_pre = numpy.zeros_like(X, order='A')
         CDL.reg_l2_group(X, rho, lam, m, Xout_pre)
 
-        assert numpy.allclose(Xout_pre, Xshrunk)
+        assert EQ(Xout_pre, Xshrunk)
         pass
 
     for d in 2**numpy.arange(0, 8, 2):
         for m in 2**numpy.arange(0, 8, 2):
             for n in 2**numpy.arange(0, 8, 2):
-                for rho in 2.0**numpy.arange(-4, 4, 2):
-                    for lam in 10.0**numpy.arange(-3, 1):
+                for rho in 2.0**numpy.arange(-2, 2):
+                    for lam in 10.0**numpy.arange(-2, 2):
                         yield (__test, int(d), int(m), int(n), rho, lam)
+    pass
+
+def test_reg_l1_space():
+
+    def __test(w, h, m, n, rho, lam, nonneg):
+        # Generate several frames of data
+        X_space = numpy.random.randn(h, w, m, n) * lam / rho
+
+        # Compute shrinkage point-wise
+        Xshrunk = (X_space > lam / rho) * (X_space - lam / rho)
+
+        if not nonneg:
+            Xshrunk = Xshrunk + (X_space < -lam / rho) * (X_space + lam / rho)
+
+        # Compute 2d-dfts
+        X_freq  = numpy.fft.fftn(X_space, axes=(0, 1))
+
+        # Reshape the data into columns
+        X_cols  = X_freq.reshape((h * w * m, n), order='F')
+
+        # Split real and complex
+        X       = CDL.complexToReal2(X_cols)
+
+        # First try without pre-allocation
+        Xout    = CDL.reg_l1_space(X, rho, lam, w, h, nonneg)
+
+        # Convert back to complex
+        Xout_cplx = CDL.real2ToComplex(Xout)
+
+        # reshape back into four dimensions
+        Xout_freq = Xout_cplx.reshape((h, w, m, n), order='F')
+
+        # Invert the fourier transform
+        Xout_space = numpy.fft.ifft2(Xout_freq, axes=(0, 1))
+
+        assert EQ(Xout_space, Xshrunk)
+
+        # Now do it again with pre-allocation
+        Xout_pre = numpy.empty_like(X_space, order='A')
+        CDL.reg_l1_space(X, rho, lam, w, h, nonneg, Xout_pre)
+
+        # Convert back to complex
+        Xout_cplx = CDL.real2ToComplex(Xout_pre)
+        # reshape back into four dimensions
+        Xout_freq = Xout_cplx.reshape((h, w, m, n), order='F')
+        # Invert the fourier transform
+        Xout_space = numpy.fft.ifft2(Xout_freq, axes=(0, 1))
+
+        assert EQ(Xout_space, Xshrunk)
+        pass
+
+    for w in 2**numpy.arange(0, 8, 2):
+        for h in 2**numpy.arange(0, 8, 2):
+            for m in 2**numpy.arange(0, 8, 2):
+                for n in 2**numpy.arange(0, 8, 2):
+                    for rho in 2.0**numpy.arange(-2, 2):
+                        for lam in 10.0**numpy.arange(-2, 2):
+                            for nonneg in [False, True]:
+                                yield (__test, int(w), int(h), int(m), int(n), rho, lam, nonneg)
     pass
 #--                               --#
