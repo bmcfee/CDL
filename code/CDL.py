@@ -164,21 +164,22 @@ def normalizeDictionary(D):
 #--- Regularization functions   ---#
 def reg_l1_real(X, rho, lam, nonneg=False, Xout=None):
     '''
-    Input:  X:      2*d*m-by-n      matrix of codeword activations
+    Input:  X:      matrix of reals
             rho:    augmented lagrangian scaling parameter
             lam:    weight on the regularization term
+            nonneg: flag to indicate non-negative l1
             Xout:   destination for the shrunken value
 
     Output:
-            (lam/rho)*Group-l2 shrunken version of X
-
+            Xout = shrinkage(X, lam / rho)
     Note:
             This routine exists for use within reg_l1_time and reg_l1_space.
             Not to be used directly.
     '''
 
     if Xout is None:
-        Xout = numpy.empty_like(X, order='F')
+        # order=A to preserve indexing order of X
+        Xout = numpy.empty_like(X, order='A')
         pass
 
     numel       = X.size

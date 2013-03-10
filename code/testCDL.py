@@ -191,7 +191,7 @@ def test_proj_l2_ball():
 
         
         # Rescale the normalized dictionary to have some inside, some outside
-        R       = 2**numpy.linspace(-4, 4, m)
+        R       = 2.0**numpy.linspace(-4, 4, m)
         X_scale = X_norm * R
 
         # Vectorize
@@ -210,7 +210,6 @@ def test_proj_l2_ball():
 
         Xdot            = numpy.sum(X_scale * X_proj, axis=0)
 
-        print X_proj_norms.max()
         for k in range(m):
             # 1. verify norm is at most 1
             #       allow some fudge factor here for numerical instability
@@ -227,6 +226,44 @@ def test_proj_l2_ball():
     for d in 2**numpy.arange(0, 8, 2):
         for m in 2**numpy.arange(2, 10):
             yield (__test, d, m)
+        pass
+    pass
+
+def test_reg_l1_real():
+
+    def __test(d, n, rho, lam, nonneg):
+        # Generate a random matrix
+        X = numpy.random.randn(d, n)
+
+        # Compute shrinkage on X
+        Xshrunk = 0.0 + (X > lam / rho) * (X - lam / rho)
+
+        if not nonneg:
+            Xshrunk = Xshrunk + (X < -lam / rho) * (X + lam / rho)
+            pass
+
+        # First, test without pre-allocation
+        Xout = CDL.reg_l1_real(X, rho, lam, nonneg)
+
+        assert numpy.allclose(Xout, Xshrunk)
+
+        # Now test with pre-allocation
+        Xout_pre = numpy.zeros_like(X)
+        CDL.reg_l1_real(X, rho, lam, nonneg, Xout_pre)
+
+        assert numpy.allclose(Xout_pre, Xshrunk)
+        pass
+
+    for d in 2**numpy.arange(0, 4):
+        for n in 2**numpy.arange(0, 4):
+            for rho in 2.0**numpy.arange(-4, 4):
+                for lam in 10.0**numpy.arange(-3, 1):
+                    for nonneg in [False, True]:
+                        yield (__test, d, n, rho, lam, nonneg)
+                        pass
+                    pass
+                pass
+            pass
         pass
     pass
 #--                               --#
