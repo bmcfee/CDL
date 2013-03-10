@@ -562,10 +562,6 @@ def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
 #---                            ---#
 
 #--- Dictionary                 ---#
-# FIXME:  2013-03-07 17:50:02 by Brian McFee <brm2132@columbia.edu>
-# convergence is slow here...
-#   i wonder if normalizing StS, StX by n would make things behave better?
-
 def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
 
     (d2, n) = X.shape

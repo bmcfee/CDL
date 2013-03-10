@@ -263,6 +263,51 @@ def test_reg_l1_real():
                         yield (__test, int(d), int(n), rho, lam, nonneg)
     pass
 
+def test_reg_l1_complex():
+
+    def __test(d, n, rho, lam):
+        # Generate a random matrix, scale by lam/rho to encourage
+        # non-trivial solutions
+        X = numpy.random.randn(2 * d, n) * lam / rho
+
+        # Compute magnitudes of complex values
+        X_cplx  = CDL.real2ToComplex(X)
+        X_abs   = numpy.abs(X_cplx)
+
+        # Compute shrinkage on X
+        # x -> (1 - (lam/rho) / |x|)_+ * x
+        S       = X_abs.copy()
+
+        # Avoid numerical instability here
+        S[S < lam / rho] = (lam / rho)
+        S   = (1 - (lam/rho) / S)
+        
+        # Tile it to get real and complex
+        S   = numpy.tile(S, (2, 1))
+
+        # Compute shrinkage
+        Xshrunk = X * S
+
+        # First, test without pre-allocation
+        Xout = CDL.reg_l1_complex(X, rho, lam)
+
+        assert numpy.allclose(Xout, Xshrunk)
+
+        # Now test with pre-allocation
+        Xout_pre = numpy.zeros_like(X, order='A')
+        CDL.reg_l1_complex(X, rho, lam, Xout_pre)
+
+        assert numpy.allclose(Xout_pre, Xshrunk)
+        pass
+
+    for d in 2**numpy.arange(0, 4):
+        for n in 2**numpy.arange(0, 4):
+            for rho in 2.0**numpy.arange(-4, 4):
+                for lam in 10.0**numpy.arange(-3, 1):
+                    yield (__test, int(d), int(n), rho, lam)
+    pass
+
+
 def test_reg_l2_group():
 
     def __test(d, m, n, rho, lam):
