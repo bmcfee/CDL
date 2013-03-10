@@ -230,7 +230,7 @@ def reg_l1_space(A, rho, lam, width=None, height=None, nonneg=False, Xout=None):
     m       = d2m / (2 * d)
 
     if Xout is None:
-        Xout = numpy.empty_like(A)
+        Xout = numpy.empty_like(A, order='A')
         pass
 
     # Reshape activations, transform each one back into image space
@@ -264,7 +264,7 @@ def reg_l1_complex(X, rho, lam, Xout=None):
     dm          = d2m / 2
 
     if Xout is None:
-        Xout = numpy.empty_like(X)
+        Xout = numpy.empty_like(X, order='A')
         pass
 
 
@@ -346,7 +346,7 @@ def reg_l2_group(X, rho, lam, m, Xout=None):
     threshold   = lam / rho
 
     if Xout is None:
-        Xout     = numpy.empty_like(X)
+        Xout     = numpy.empty_like(X, order='A')
         pass
 
     group_shrinkage =   r"""
@@ -578,8 +578,8 @@ def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
     rho     = TAU ** 8                  # (MAGIC) Dictionary rho likes to get big
 
     D       = numpy.zeros( 2 * d * m )  # Unconstrained codebook
-    E       = numpy.zeros_like(D)       # l2-constrained codebook
-    W       = numpy.zeros_like(E)       # Scaled dual variables
+    E       = numpy.zeros_like(D, order='A')       # l2-constrained codebook
+    W       = numpy.zeros_like(E, order='A')       # Scaled dual variables
 
     if Dinitial is not None:
         E   = columnsToVector(diagsToColumns(Dinitial))[:, 0]
