@@ -24,7 +24,7 @@ def test_complexToReal2():
 
     for d in 2**numpy.arange(0, 12, 2):
         for n in 2**numpy.arange(0, 12, 4):
-            yield (__test, d, n)
+            yield (__test, int(d), int(n))
         pass
     pass
 
@@ -47,7 +47,7 @@ def test_real2ToComplex():
 
     for d in 2**numpy.arange(0, 12, 2):
         for n in 2**numpy.arange(0, 12, 4):
-            yield (__test, d, n)
+            yield (__test, int(d), int(n))
         pass
     pass
 
@@ -79,7 +79,7 @@ def test_columnsToDiags():
 
     for d in 2**numpy.arange(0, 8, 2):
         for m in 2**numpy.arange(0, 8, 2):
-            yield (__test, d, m)
+            yield (__test, int(d), int(m))
         pass
     pass
 
@@ -95,7 +95,7 @@ def test_diagsToColumns():
 
     for d in 2**numpy.arange(0, 8, 2):
         for m in 2**numpy.arange(0, 8, 2):
-            yield (__test, d, m)
+            yield (__test, int(d), int(m))
         pass
     pass
 
@@ -124,7 +124,7 @@ def test_columnsToVector():
 
     for d in 2**numpy.arange(0, 8, 2):
         for m in 2**numpy.arange(0, 8, 2):
-            yield (__test, d, m)
+            yield (__test, int(d), int(m))
         pass
     pass
 
@@ -141,7 +141,7 @@ def test_vectorToColumns():
 
     for d in 2**numpy.arange(0, 8, 2):
         for m in 2**numpy.arange(0, 8, 2):
-            yield (__test, d, m)
+            yield (__test, int(d), int(m))
         pass
     pass
 
@@ -174,7 +174,7 @@ def test_normalizeDictionary():
 
     for d in 2**numpy.arange(0, 8, 2):
         for m in 2**numpy.arange(0, 8, 2):
-            yield (__test, d, m)
+            yield (__test, int(d), int(m))
         pass
     pass
 #--                   --#
@@ -225,7 +225,7 @@ def test_proj_l2_ball():
 
     for d in 2**numpy.arange(0, 8, 2):
         for m in 2**numpy.arange(2, 10):
-            yield (__test, d, m)
+            yield (__test, int(d), int(m))
         pass
     pass
 
@@ -249,7 +249,7 @@ def test_reg_l1_real():
         assert numpy.allclose(Xout, Xshrunk)
 
         # Now test with pre-allocation
-        Xout_pre = numpy.zeros_like(X)
+        Xout_pre = numpy.zeros_like(X, order='A')
         CDL.reg_l1_real(X, rho, lam, nonneg, Xout_pre)
 
         assert numpy.allclose(Xout_pre, Xshrunk)
@@ -260,11 +260,55 @@ def test_reg_l1_real():
             for rho in 2.0**numpy.arange(-4, 4):
                 for lam in 10.0**numpy.arange(-3, 1):
                     for nonneg in [False, True]:
-                        yield (__test, d, n, rho, lam, nonneg)
-                        pass
-                    pass
+                        yield (__test, int(d), int(n), rho, lam, nonneg)
+    pass
+
+def test_reg_l2_group():
+
+    def __test(d, m, n, rho, lam):
+        # Generate a random matrix 2*d*m-by-n matrix
+        # scale by lam/rho to encourage non-trivial solutions
+        X = numpy.random.randn(2 * d * m, n) * lam / rho
+
+        # Compute the properly shrunk matrix
+        X_cplx  = CDL.real2ToComplex(X)
+        S       = (X_cplx.conj() * X_cplx).real
+
+        X_norms = numpy.zeros((m, n))
+
+        for k in range(m):
+            X_norms[k, :] = numpy.sum(S[k*d:(k+1)*d, :], axis=0)**0.5
+
+        Xshrunk = numpy.zeros_like(X, order='A')
+
+        for i in range(n):
+            for k in range(m):
+                if X_norms[k, i] > lam / rho:
+                    scale = 1.0 - lam / (rho * X_norms[k, i])
+                else:
+                    scale = 0.0
+                Xshrunk[(k*d):(k+1)*d, i] = scale * X[d*k:d*(k+1), i]
+                Xshrunk[d*(m+k):(m+k+1)*d, i] = scale * X[d*(m+k):d*(m+k+1), i]
                 pass
             pass
+
+        # First, test without pre-allocation
+        Xout = CDL.reg_l2_group(X, rho, lam, m)
+        assert numpy.allclose(Xout, Xshrunk)
+
+        # Now test with pre-allocation
+
+        Xout_pre = numpy.zeros_like(X, order='A')
+        CDL.reg_l2_group(X, rho, lam, m, Xout_pre)
+
+        assert numpy.allclose(Xout_pre, Xshrunk)
         pass
+
+    for d in 2**numpy.arange(0, 8, 2):
+        for m in 2**numpy.arange(0, 8, 2):
+            for n in 2**numpy.arange(0, 8, 2):
+                for rho in 2.0**numpy.arange(-4, 4, 2):
+                    for lam in 10.0**numpy.arange(-3, 1):
+                        yield (__test, int(d), int(m), int(n), rho, lam)
     pass
 #--                               --#
