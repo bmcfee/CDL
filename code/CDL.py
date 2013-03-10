@@ -236,7 +236,8 @@ def reg_l1_space(A, rho, lam, width=None, height=None, nonneg=False, Xout=None):
     Aspace  = numpy.fft.ifft2(numpy.reshape(real2ToComplex(A), (height, width, m, n), order='F'), axes=(0, 1)).real
 
     # Apply shrinkage
-    reg_l1_real(Aspace, rho, lam, nonneg, Xout=Aspace)
+    # lam/rho -> lam/(d * rho) to compensate for non-unitary FFT implementation
+    reg_l1_real(Aspace, rho, lam / d, nonneg, Xout=Aspace)
 
     # Transform back, reshape, and separate real from imaginary
     Xout[:] = complexToReal2(numpy.reshape(numpy.fft.fft2(Aspace, axes=(0,1)), (height * width * m, n), order='F'))[:]
