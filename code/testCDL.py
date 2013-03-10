@@ -146,6 +146,36 @@ def testVectorToColumns():
     pass
 
 def testNormalizeDictionary():
+    def __test(d, m):
+        # Generate a random dictionary
+        X       = numpy.random.randn(2 * d, m)
+
+        # Convert to diagonals
+        Xdiags  = CDL.columnsToDiags(X)
+
+        # Normalize
+        N_Xdiag = CDL.normalizeDictionary(Xdiags)
+
+        # Convert back
+        N_X     = CDL.diagsToColumns(N_Xdiag)
+
+        # 1. verify unit norms
+        norms   = numpy.sum(N_X**2, axis=0)**0.5
+        assert numpy.allclose(norms, numpy.ones_like(norms))
+
+        # 2. verify that directions are correct:
+        #       projection onto the normalized basis should equal norm 
+        #       of the original basis
+        norms_orig = numpy.sum(X**2, axis=0)**0.5
+        projection = numpy.sum(X * N_X, axis=0)
+
+        assert numpy.allclose(norms_orig, projection)
+        pass
+
+    for d in 2**numpy.arange(0, 8, 2):
+        for m in 2**numpy.arange(0, 8, 2):
+            yield (__test, d, m)
+        pass
     pass
 #--                   --#
 
