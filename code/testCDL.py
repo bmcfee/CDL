@@ -74,14 +74,29 @@ def testColumnsToDiags():
                 assert (numpy.allclose(B[j, k], - Q[j, m * d + k * d + j]) and
                         numpy.allclose(B[j, k], Q[d + j, k *d + j]))
                 pass
+            pass
         pass
-    for d in 2**numpy.arange(0, 12, 2):
+
+    for d in 2**numpy.arange(0, 8, 2):
         for m in 2**numpy.arange(0, 8, 2):
             yield (__test, d, m)
         pass
     pass
 
 def testDiagsToColumns():
+    # This test assumes that columnsToDiags is correct.
+
+    def __test(d, m):
+        X = numpy.random.randn(2 * d, m)
+        Q = CDL.columnsToDiags(X)
+        X_back  = CDL.diagsToColumns(Q)
+        assert numpy.allclose(X, X_back)
+        pass
+
+    for d in 2**numpy.arange(0, 8, 2):
+        for m in 2**numpy.arange(0, 8, 2):
+            yield (__test, d, m)
+        pass
     pass
 
 
