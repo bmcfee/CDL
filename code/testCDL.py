@@ -101,9 +101,48 @@ def testDiagsToColumns():
 
 
 def testColumnsToVector():
+    def __test(d, m):
+        # Generate a random matrix
+        X = numpy.random.randn(2 * d, m)
+
+        # Split real and imaginary components
+        A = X[:d, :]
+        B = X[d:, :]
+
+        # Vectorize
+        V = CDL.columnsToVector(X)
+
+        # Equality-test
+        # A[:,k] => V[d * k : d * (k+1)]
+        # B[:,k] => V[d * (m + k) : d * (m + k + 1)]
+        for k in range(m):
+            # We need to flatten here due to matrix/vector subscripting
+            assert (numpy.allclose(A[:, k], V[k*d:(k + 1)*d].flatten()) and
+                    numpy.allclose(B[:, k], V[(m + k)*d:(m + k + 1)*d].flatten()))
+            pass
+        pass
+
+    for d in 2**numpy.arange(0, 8, 2):
+        for m in 2**numpy.arange(0, 8, 2):
+            yield (__test, d, m)
+        pass
     pass
 
 def testVectorToColumns():
+    # This test assumes that columnsToVector is correct.
+
+    def __test(d, m):
+        X = numpy.random.randn(2 * d, m)
+        V = CDL.columnsToVector(X)
+        X_back = CDL.vectorToColumns(V, m)
+
+        assert numpy.allclose(X, X_back)
+        pass
+
+    for d in 2**numpy.arange(0, 8, 2):
+        for m in 2**numpy.arange(0, 8, 2):
+            yield (__test, d, m)
+        pass
     pass
 
 def testNormalizeDictionary():
