@@ -232,11 +232,12 @@ def test_proj_l2_ball():
 def test_reg_l1_real():
 
     def __test(d, n, rho, lam, nonneg):
-        # Generate a random matrix
-        X = numpy.random.randn(d, n)
+        # Generate a random matrix, scale by lam/rho to encourage
+        # non-trivial solutions
+        X = numpy.random.randn(d, n) * lam / rho
 
         # Compute shrinkage on X
-        Xshrunk = 0.0 + (X > lam / rho) * (X - lam / rho)
+        Xshrunk = (X > lam / rho) * (X - lam / rho)
 
         if not nonneg:
             Xshrunk = Xshrunk + (X < -lam / rho) * (X + lam / rho)
