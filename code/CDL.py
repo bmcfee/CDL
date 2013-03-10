@@ -17,8 +17,8 @@ RHO_MAX     =   1e4         # Maximum allowed scale for rho
 ABSTOL      =   1e-4        # absolute tolerance for convergence criteria
 RELTOL      =   1e-3        # relative tolerance
 MU          =   3.0         # maximum ratio between primal and dual residuals
-TAU         =   2           # scaling factor for rho when primal/dual is off by more than MU
-T_CHECKUP   =   10          # number of steps between convergence tests and rho-rescaling
+TAU         =   2           # scaling for rho when primal/dual exceeds MU
+T_CHECKUP   =   10          # number of steps between convergence tests
 #---                            ---#
 
 #--- Utility functions          ---#
@@ -51,7 +51,7 @@ def real2ToComplex(Y):
     '''
     d = Y.shape[0] / 2
     if Y.ndim > 1:
-        return Y[:d,:] + 1.j * Y[d:,:]
+        return Y[:d, :] + 1.j * Y[d:, :]
     else:
         return Y[:d] + 1.j * Y[d:]
 
@@ -75,8 +75,8 @@ def diagsToColumns(Q):
     D = numpy.empty( (d2, m) )
 
     for k in xrange(0, d * m, d):
-        D[:d,k/d] = Q[range(d), range(k, k + d)]
-        D[d:,k/d] = Q[range(d, d2), range(k, k + d)]
+        D[:d, k/d] = Q[range(d), range(k, k + d)]
+        D[d:, k/d] = Q[range(d, d2), range(k, k + d)]
         pass
 
     return D
@@ -105,10 +105,10 @@ def columnsToDiags(D):
     d = D.shape[0] / 2
 
     # Block the real component
-    A = __sparseDiagonalBlock(D[:d,:])
+    A = __sparseDiagonalBlock(D[:d, :])
 
     # Block the imaginary component
-    B = __sparseDiagonalBlock(D[d:,:])
+    B = __sparseDiagonalBlock(D[d:, :])
 
     # Block up everything in csr format
     return scipy.sparse.bmat([ [ A, -B], [B, A] ], format='csr')
@@ -125,8 +125,8 @@ def columnsToVector(X):
 
     d = d2 / 2
 
-    A = numpy.reshape(X[:d,:], (d * m, 1), order='F')
-    B = numpy.reshape(X[d:,:], (d * m, 1), order='F')
+    A = numpy.reshape(X[:d, :], (d * m, 1), order='F')
+    B = numpy.reshape(X[d:, :], (d * m, 1), order='F')
     return numpy.vstack( (A, B) )
 
 def vectorToColumns(AB, m):
@@ -240,7 +240,7 @@ def reg_l1_space(A, rho, lam, width=None, height=None, nonneg=False, Xout=None):
     reg_l1_real(Aspace, rho, lam / d, nonneg, Xout=Aspace)
 
     # Transform back, reshape, and separate real from imaginary
-    Xout[:] = complexToReal2(numpy.reshape(numpy.fft.fft2(Aspace, axes=(0,1)), (height * width * m, n), order='F'))[:]
+    Xout[:] = complexToReal2(numpy.reshape(numpy.fft.fft2(Aspace, axes=(0, 1)), (height * width * m, n), order='F'))[:]
     return Xout
 
 def reg_l1_complex(X, rho, lam, Xout=None):
@@ -581,23 +581,23 @@ def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
     W       = numpy.zeros_like(E)       # Scaled dual variables
 
     if Dinitial is not None:
-        E   = columnsToVector(diagsToColumns(Dinitial))[:,0]
+        E   = columnsToVector(diagsToColumns(Dinitial))[:, 0]
         pass
 
     # Aggregate the scatter and target matrices
     def __aggregator():
-        Si      = columnsToDiags(vectorToColumns(A[:,0], m))
+        Si      = columnsToDiags(vectorToColumns(A[:, 0], m))
         # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
         #  sparse multiply ~= hadamard multiply
-        StX     = Si.T * X[:,0]
+        StX     = Si.T * X[:, 0]
         # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
         #  sparse multiply ~= hadamard multiply
         StS     = Si.T * Si
         for i in xrange(1, n):
-            Si          = columnsToDiags(vectorToColumns(A[:,i], m))
+            Si          = columnsToDiags(vectorToColumns(A[:, i], m))
             # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
             #  sparse multiply ~= hadamard multiply
-            StX         = StX + Si.T * X[:,i]
+            StX         = StX + Si.T * X[:, i]
             # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
             #  sparse multiply ~= hadamard multiply
             StS         = StS + Si.T * Si
