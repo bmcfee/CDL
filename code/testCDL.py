@@ -5,7 +5,7 @@ import CDL
 import numpy
 
 #-- Utility functions --#
-def testComplexToReal2():
+def test_complexToReal2():
     # Generate random d-by-n complex matrices of various sizes
     # verify that complexToReal2 correctly separates real / imaginary
 
@@ -28,7 +28,7 @@ def testComplexToReal2():
         pass
     pass
 
-def testReal2ToComplex():
+def test_real2ToComplex():
     # Generate random 2d-by-n real matrices
     # verify that real2ToComplex correctly combines the top and bottom halves
 
@@ -51,7 +51,7 @@ def testReal2ToComplex():
         pass
     pass
 
-def testColumnsToDiags():
+def test_columnsToDiags():
 
     def __test(d, m):
         # Generate a random 2d-by-n matrix
@@ -83,7 +83,7 @@ def testColumnsToDiags():
         pass
     pass
 
-def testDiagsToColumns():
+def test_diagsToColumns():
     # This test assumes that columnsToDiags is correct.
 
     def __test(d, m):
@@ -100,7 +100,7 @@ def testDiagsToColumns():
     pass
 
 
-def testColumnsToVector():
+def test_columnsToVector():
     def __test(d, m):
         # Generate a random matrix
         X = numpy.random.randn(2 * d, m)
@@ -128,7 +128,7 @@ def testColumnsToVector():
         pass
     pass
 
-def testVectorToColumns():
+def test_vectorToColumns():
     # This test assumes that columnsToVector is correct.
 
     def __test(d, m):
@@ -145,7 +145,7 @@ def testVectorToColumns():
         pass
     pass
 
-def testNormalizeDictionary():
+def test_normalizeDictionary():
     def __test(d, m):
         # Generate a random dictionary
         X       = numpy.random.randn(2 * d, m)
@@ -180,4 +180,53 @@ def testNormalizeDictionary():
 #--                   --#
 
 #-- Regularization and projection --#
+def test_proj_l2_ball():
+    
+    def __test(d, m):
+        # Build a random dictionary in diagonal form
+        X       = numpy.random.randn(2 * d, m)
+
+        # Normalize the dictionary and convert back to columns
+        X_norm  = CDL.diagsToColumns(CDL.normalizeDictionary(CDL.columnsToDiags(X)))
+
+        
+        # Rescale the normalized dictionary to have some inside, some outside
+        R       = 2**numpy.linspace(-4, 4, m)
+        X_scale = X_norm * R
+
+        # Vectorize
+        V_scale = CDL.columnsToVector(X_scale)
+
+        # Project
+        V_proj  = CDL.proj_l2_ball(V_scale, m)
+
+        # Rearrange the projected matrix into columns
+        X_proj  = CDL.vectorToColumns(V_proj, m)
+
+
+        # Compute norms
+        X_scale_norms   = numpy.sum(X_scale**2, axis=0)**0.5
+        X_proj_norms    = numpy.sum(X_proj**2, axis=0)**0.5
+
+        Xdot            = numpy.sum(X_scale * X_proj, axis=0)
+
+        print X_proj_norms.max()
+        for k in range(m):
+            # 1. verify norm is at most 1
+            #       allow some fudge factor here for numerical instability
+            assert X_proj_norms[k] <= 1.0 + 1e-10
+
+            # 2. verify that points with R < 1 were untouched
+            assert R[k] > 1.0 or numpy.allclose(X_proj[:, k], X_scale[:, k])
+
+            # 3. verify that points with R >= 1.0 preserve direction
+            assert R[k] < 1.0 or numpy.allclose(Xdot[k], X_scale_norms[k])
+
+        pass
+
+    for d in 2**numpy.arange(0, 8, 2):
+        for m in 2**numpy.arange(2, 10):
+            yield (__test, d, m)
+        pass
+    pass
 #--                               --#

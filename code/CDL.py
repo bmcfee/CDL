@@ -127,7 +127,7 @@ def columnsToVector(X):
 
     A = numpy.reshape(X[:d, :], (d * m, 1), order='F')
     B = numpy.reshape(X[d:, :], (d * m, 1), order='F')
-    return numpy.vstack( (A, B) )
+    return numpy.vstack( (A, B) ).flatten()
 
 def vectorToColumns(AB, m):
     '''
@@ -394,12 +394,12 @@ def proj_l2_ball(X, m):
 
     # Group by codewords
     Z = numpy.empty(m)
-    for k in xrange(0, d*m, d):
-        Z[k/d] = max(1.0, numpy.sum(Xnorm[k:(k+d)])**0.5)
+    for k in xrange(m):
+        Z[k] = max(1.0, numpy.sum(Xnorm[k*d:(k+1)*d])**0.5)
         pass
     
     # Repeat and tile each norm
-    Z       = numpy.tile(numpy.repeat(Z, d), (1, 2))
+    Z       = numpy.tile(numpy.repeat(Z, d), (1, 2)).flatten()
 
     # Project
     Xp      = numpy.zeros(2 * d * m)
