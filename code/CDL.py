@@ -234,14 +234,32 @@ def reg_l1_space(A, rho, lam, width=None, height=None, nonneg=False, Xout=None):
         pass
 
     # Reshape activations, transform each one back into image space
-    Aspace  = numpy.fft.ifft2(numpy.reshape(real2ToComplex(A), (height, width, m, n), order='F'), axes=(0, 1)).real
+#     Aspace  = numpy.fft.ifft2(numpy.reshape(real2ToComplex(A), (height, width, m, n), order='F'), axes=(0, 1)).real
+
+    Acomplex    = real2ToComplex(A)
+    Areshape    = Acomplex.reshape( (height, width, m, n), order='F')
+    Aspace      = numpy.fft.ifft2( Areshape, axes=(0, 1)).real
 
     # Apply shrinkage
     # lam/rho -> lam/(d * rho) to compensate for non-unitary FFT implementation
-    reg_l1_real(Aspace, rho, lam / d, nonneg, Xout=Aspace)
+    # FIXME:  2013-03-10 18:55:53 by Brian McFee <brm2132@columbia.edu>
+    #      weave seems to have some indexing issues with 4d tensors
+#     Aspace1 = reg_l1_real(Aspace, rho, lam / d, nonneg)
+
+    # Let's try it the slow way:
+
+    threshold = lam / rho
+
+    Ashrunk     = (Aspace > threshold) * (Aspace - threshold)
+    if not nonneg:
+        Ashrunk = Ashrunk + (Aspace < - threshold) * (Aspace + threshold)
+    Aspace = Ashrunk
 
     # Transform back, reshape, and separate real from imaginary
-    Xout[:] = complexToReal2(numpy.reshape(numpy.fft.fft2(Aspace, axes=(0, 1)), (height * width * m, n), order='F'))[:]
+    Areshape = numpy.fft.fft2(Aspace, axes=(0, 1))
+    Acomplex = Areshape.reshape((height * width * m, n), order='F')
+    Xout[:] = complexToReal2(Acomplex)[:]
+#     Xout[:] = complexToReal2(numpy.reshape(numpy.fft.fft2(Aspace, axes=(0, 1)), (height * width * m, n), order='F'))[:]
     return Xout
 
 def reg_l1_complex(X, rho, lam, Xout=None):

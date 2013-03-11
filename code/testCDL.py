@@ -375,7 +375,7 @@ def test_reg_l1_space():
             Xshrunk = Xshrunk + (X_space < -lam / rho) * (X_space + lam / rho)
 
         # Compute 2d-dfts
-        X_freq  = numpy.fft.fftn(X_space, axes=(0, 1))
+        X_freq  = numpy.fft.fft2(X_space, axes=(0, 1))
 
         # Reshape the data into columns
         X_cols  = X_freq.reshape((h * w * m, n), order='F')
@@ -384,7 +384,7 @@ def test_reg_l1_space():
         X       = CDL.complexToReal2(X_cols)
 
         # First try without pre-allocation
-        Xout    = CDL.reg_l1_space(X, rho, lam, w, h, nonneg)
+        Xout    = CDL.reg_l1_space(X, rho, lam, width=w, height=h, nonneg=nonneg)
 
         # Convert back to complex
         Xout_cplx = CDL.real2ToComplex(Xout)
@@ -392,31 +392,42 @@ def test_reg_l1_space():
         # reshape back into four dimensions
         Xout_freq = Xout_cplx.reshape((h, w, m, n), order='F')
 
-        # Invert the fourier transform
-        Xout_space = numpy.fft.ifft2(Xout_freq, axes=(0, 1))
 
+        # Invert the fourier transform
+        Xout_space = numpy.fft.ifft2(Xout_freq, axes=(0, 1)).real
+
+        print '---'
+        print 'lam / rho = ', lam / rho
+        print 'Input: '
+        print X_space
+        print 'Target: '
+        print Xshrunk
+        print 'Output: '
+        print Xout_space
+        print '----'
         assert EQ(Xout_space, Xshrunk)
 
         # Now do it again with pre-allocation
-        Xout_pre = numpy.empty_like(X_space, order='A')
+        Xout_pre = numpy.empty_like(X, order='A')
         CDL.reg_l1_space(X, rho, lam, w, h, nonneg, Xout_pre)
 
         # Convert back to complex
-        Xout_cplx = CDL.real2ToComplex(Xout_pre)
-        # reshape back into four dimensions
-        Xout_freq = Xout_cplx.reshape((h, w, m, n), order='F')
-        # Invert the fourier transform
-        Xout_space = numpy.fft.ifft2(Xout_freq, axes=(0, 1))
+        Xout_cplx_pre = CDL.real2ToComplex(Xout_pre)
 
-        assert EQ(Xout_space, Xshrunk)
+        # reshape back into four dimensions
+        Xout_freq_pre = Xout_cplx_pre.reshape((h, w, m, n), order='F')
+        # Invert the fourier transform
+        Xout_space_pre = numpy.fft.ifft2(Xout_freq_pre, axes=(0, 1)).real
+
+        assert EQ(Xout_space_pre, Xshrunk)
         pass
 
-    for w in 2**numpy.arange(0, 8, 2):
-        for h in 2**numpy.arange(0, 8, 2):
-            for m in 2**numpy.arange(0, 8, 2):
-                for n in 2**numpy.arange(0, 8, 2):
+    for w in 2**numpy.arange(0, 8, 4):
+        for h in 2**numpy.arange(0, 8, 4):
+            for m in 2**numpy.arange(0, 8, 4):
+                for n in 2**numpy.arange(0, 8, 4):
                     for rho in 2.0**numpy.arange(-2, 2):
-                        for lam in 10.0**numpy.arange(-2, 2):
+                        for lam in 10.0**numpy.arange(-2, 1):
                             for nonneg in [False, True]:
                                 yield (__test, int(w), int(h), int(m), int(n), rho, lam, nonneg)
     pass
