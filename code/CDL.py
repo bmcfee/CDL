@@ -177,6 +177,8 @@ def reg_l1_real(X, rho, lam, nonneg=False, Xout=None):
             Not to be used directly.
     '''
 
+    WEAVE = True
+
     if Xout is None:
         # order=A to preserve indexing order of X
         Xout = numpy.empty_like(X, order='A')
@@ -184,33 +186,32 @@ def reg_l1_real(X, rho, lam, nonneg=False, Xout=None):
 
     numel       = X.size
 
-    threshold   = lam / rho
+    threshold   = float(lam / rho)
 
     shrinkage   = r"""
         for (int i = 0; i < numel; i++) {
-            Xout[i] = (X[i] - threshold > 0.0) ? (X[i] - threshold) : ((nonneg == 0 && X[i] + threshold < 0.0) ? (X[i] + threshold) : 0.0);
+            if (X[i] - threshold > 0.0) {
+                Xout[i]     = X[i] - threshold;
+            } else {
+                if (X[i] + threshold < 0.0 && nonneg == 0) {
+                    Xout[i] = X[i] + threshold;
+                } else {
+                    Xout[i] = 0.0;
+                }
+            }
         }
     """
-    scipy.weave.inline(shrinkage, ['numel', 'threshold', 'X', 'Xout', 'nonneg'])
+    if WEAVE:
+        scipy.weave.inline(shrinkage, ['numel', 'threshold', 'X', 'Xout', 'nonneg'])
+    else:
+        Xout[:] = (X  > threshold) * (X - threshold)
+        if not nonneg:
+            Xout[:] = Xout[:] + (X < -threshold) * (X + threshold)
+            pass
+        pass
 
     # Apply the soft-thresholding operator
     return Xout
-
-def reg_l1_time(X, rho, lam, Xout=None):
-    '''
-        Temporal L1 sparsity: assumes each column of X is (DFT) of a time-series.
-
-        sum_i lam / rho * |FFTinv(X[:,i])|_1
-
-        The proper way to use these is as follows:
-
-        from functools import partial
-
-        g = functools.partial(CDL.reg_time_l1, lam=0.5)
-        A = CDL.encode(X, D, g)
-    '''
-    raise Exception('not yet implemented')
-    pass
 
 def reg_l1_space(A, rho, lam, width=None, height=None, nonneg=False, Xout=None):
     '''
@@ -234,32 +235,17 @@ def reg_l1_space(A, rho, lam, width=None, height=None, nonneg=False, Xout=None):
         pass
 
     # Reshape activations, transform each one back into image space
-#     Aspace  = numpy.fft.ifft2(numpy.reshape(real2ToComplex(A), (height, width, m, n), order='F'), axes=(0, 1)).real
-
-    Acomplex    = real2ToComplex(A)
-    Areshape    = Acomplex.reshape( (height, width, m, n), order='F')
-    Aspace      = numpy.fft.ifft2( Areshape, axes=(0, 1)).real
+    Aspace  = numpy.fft.ifft2(numpy.reshape(real2ToComplex(A), (height, width, m, n), order='F'), axes=(0, 1)).real
 
     # Apply shrinkage
-    # lam/rho -> lam/(d * rho) to compensate for non-unitary FFT implementation
-    # FIXME:  2013-03-10 18:55:53 by Brian McFee <brm2132@columbia.edu>
-    #      weave seems to have some indexing issues with 4d tensors
-#     Aspace1 = reg_l1_real(Aspace, rho, lam / d, nonneg)
-
-    # Let's try it the slow way:
-
-    threshold = lam / rho
-
-    Ashrunk     = (Aspace > threshold) * (Aspace - threshold)
-    if not nonneg:
-        Ashrunk = Ashrunk + (Aspace < - threshold) * (Aspace + threshold)
-    Aspace = Ashrunk
+    # FIXME:  2013-03-11 12:19:56 by Brian McFee <brm2132@columbia.edu>
+    # this is some brutal hackery, but weave doesn't like 4-d arrays for some reason...     
+    Aspace = Aspace.flatten(order='F')
+    reg_l1_real(Aspace, rho, lam, nonneg, Aspace)
+    Aspace = Aspace.reshape((height, width, m, n), order='F')
 
     # Transform back, reshape, and separate real from imaginary
-    Areshape = numpy.fft.fft2(Aspace, axes=(0, 1))
-    Acomplex = Areshape.reshape((height * width * m, n), order='F')
-    Xout[:] = complexToReal2(Acomplex)[:]
-#     Xout[:] = complexToReal2(numpy.reshape(numpy.fft.fft2(Aspace, axes=(0, 1)), (height * width * m, n), order='F'))[:]
+    Xout[:] = complexToReal2(numpy.reshape(numpy.fft.fft2(Aspace, axes=(0, 1)), (height * width * m, n), order='F'))[:]
     return Xout
 
 def reg_l1_complex(X, rho, lam, Xout=None):
@@ -286,7 +272,7 @@ def reg_l1_complex(X, rho, lam, Xout=None):
         pass
 
 
-    threshold   = lam / rho
+    threshold   = float(lam / rho)
 
     complex_shrinkage   = r"""
         for (int i = 0; i < n; i++) {
@@ -325,7 +311,7 @@ def reg_l2_group(X, rho, lam, m, Xout=None):
 
     (d2m, n)    = X.shape
     dm          = d2m / 2
-    d           = dm / m
+    d           = int(dm / m)
     
     #   1.  compute sub-vector l2 norms
     #   2.  apply soft-thresholding group-wise
@@ -361,7 +347,7 @@ def reg_l2_group(X, rho, lam, m, Xout=None):
     ### 
     # soft-thresholding
 
-    threshold   = lam / rho
+    threshold   = float(lam / rho)
 
     if Xout is None:
         Xout     = numpy.empty_like(X, order='A')
@@ -714,7 +700,6 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
 
                 l2_group        l2 norm per activation map (Default)
                 l1              l1 norm per (complex) activation map
-                l1_time         l1 norm of codeword activations in time domain (1d activations)
                 l1_space        l1 norm of codeword activations in space domain (2d activations)
 
 
@@ -765,8 +750,6 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
         g   = functools.partial(reg_l2_group, lam=lam, m=m)
     elif reg == 'l1':
         g   = functools.partial(reg_l1_complex, lam=lam)
-    elif reg == 'l1_time':
-        g   = functools.partial(reg_l1_time, lam=lam)
     elif reg == 'l1_space':
         g   = functools.partial(reg_l1_space, lam=lam, **kwargs)
     else:
