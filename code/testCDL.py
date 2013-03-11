@@ -396,15 +396,6 @@ def test_reg_l1_space():
         # Invert the fourier transform
         Xout_space = numpy.fft.ifft2(Xout_freq, axes=(0, 1)).real
 
-        print '---'
-        print 'lam / rho = ', lam / rho
-        print 'Input: '
-        print X_space
-        print 'Target: '
-        print Xshrunk
-        print 'Output: '
-        print Xout_space
-        print '----'
         assert EQ(Xout_space, Xshrunk)
 
         # Now do it again with pre-allocation
