@@ -415,7 +415,7 @@ def proj_l2_ball(X, m):
 
 
 #--- Encoder                    ---#
-def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
+def encoder(X, D, reg, max_iter=500, dynamic_rho=True):
     '''
     Encoder
 
@@ -566,7 +566,7 @@ def encoder(X, D, reg, max_iter=2000, dynamic_rho=True):
 #---                            ---#
 
 #--- Dictionary                 ---#
-def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
+def dictionary(X, A, max_iter=500, dynamic_rho=True, Dinitial=None):
 
     (d2, n) = X.shape
     d2m     = A.shape[0]
@@ -689,7 +689,7 @@ def dictionary(X, A, max_iter=2000, dynamic_rho=True, Dinitial=None):
 #---                            ---#
 
 #--- Alternating minimization   ---#
-def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps=2000, D=None, **kwargs):
+def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps=500, D=None, **kwargs):
     '''
     Alternating minimization to learn convolutional dictionary
 
@@ -713,7 +713,16 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
                     width:      width of the activation patch
                     height:     width of the activation patch
     Output:
-        (D, A, diagnostics) where X ~= D * A
+        (D, A, encoder, diagnostics) 
+        
+        where 
+
+        D:          2d-by-m     is the learned dictionary
+        A:          2dm-by-n    is the set of activations for X
+        encoder:                is the learned encoder function
+                        e.g.,   A2 = encoder(X2)
+        diagnostics:            is a report of the learning algorithm
+
     '''
 
     (d2, n) = X.shape
@@ -806,5 +815,6 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
     # Re-encode the data with the final codebook
     (A, A_diagnostics) = encoder(X, D, g, max_iter=max_admm_steps)
     diagnostics['final_encoder'] = A_diagnostics
-    return (D, A, diagnostics)
+    my_encoder  = functools.partial(encoder, D=D, g=g, max_iter=max_admm_steps)
+    return (D, A, my_encoder, diagnostics)
 #---                            ---#
