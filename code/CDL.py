@@ -415,7 +415,7 @@ def proj_l2_ball(X, m):
 
 
 #--- Encoder                    ---#
-def encoder(X, D, reg, max_iter=500, dynamic_rho=True):
+def encoder(X, D, reg, max_iter=500, dynamic_rho=True, output_diagnostics=True):
     '''
     Encoder
 
@@ -562,7 +562,10 @@ def encoder(X, D, reg, max_iter=500, dynamic_rho=True):
     _DIAG['rho' ]           = numpy.array(_DIAG['rho'])
     _DIAG['num_steps']      = t
 
-    return (Z, _DIAG)
+    if output_diagnostics:
+        return (Z, _DIAG)
+    else:
+        return Z
 #---                            ---#
 
 #--- Dictionary                 ---#
@@ -815,6 +818,9 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
     # Re-encode the data with the final codebook
     (A, A_diagnostics) = encoder(X, D, g, max_iter=max_admm_steps)
     diagnostics['final_encoder'] = A_diagnostics
-    my_encoder  = functools.partial(encoder, D=D, g=g, max_iter=max_admm_steps)
+    
+    # Package up the learned encoder function for future use
+    my_encoder  = functools.partial(encoder, D=D, reg=g, max_iter=max_admm_steps, output_diagnostics=False)
+
     return (D, A, my_encoder, diagnostics)
 #---                            ---#
