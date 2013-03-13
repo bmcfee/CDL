@@ -10,6 +10,7 @@ import numpy
 import scipy.linalg, scipy.sparse, scipy.sparse.linalg
 import scipy.weave
 import functools
+import multiprocessing as mp
 
 #--- magic numbers              ---#
 RHO_MIN     =   1e-4        # Minimum allowed scale for augmenting term rho
@@ -389,8 +390,6 @@ def proj_l2_ball(X, m):
 
         Output:     X where each codeword is projected onto the unit l2 ball
     '''
-    # TODO:   2013-03-06 14:00:34 by Brian McFee <brm2132@columbia.edu>
-    # weave this function
     d2m     = X.shape[0]
     d       = d2m / (2 * m)
 
@@ -415,7 +414,7 @@ def proj_l2_ball(X, m):
 
 
 #--- Encoder                    ---#
-def encoder(X, D, reg, max_iter=500, dynamic_rho=True, output_diagnostics=True):
+def encoder(X, D, reg, max_iter=1000, dynamic_rho=True, output_diagnostics=True):
     '''
     Encoder
 
@@ -566,10 +565,63 @@ def encoder(X, D, reg, max_iter=500, dynamic_rho=True, output_diagnostics=True):
         return (Z, _DIAG)
     else:
         return Z
+
+def parallel_encoder(X, D, reg, n_threads=4, max_iter=1000, dynamic_rho=True, output_diagnostics=True):
+
+    n   = X.shape[1]
+    dm  = D.shape[1]
+
+    A   = numpy.empty( (dm, n), order='F')
+
+    def __consumer(inQ, out_Q):
+        while True:
+            try:
+                (i, j)          = in_Q.get(True, 1)
+                if output_diagnostics:
+                    (Aij, diags)    = encoder(X[:,i:j], D, reg, max_iter, dynamic_rho, output_diagnostics)
+                else:
+                    Aij             = encoder(X[:,i:j], D, reg, max_iter, dynamic_rho, output_diagnostics)
+                    diags           = None
+
+                out_Q.put( (i, j, Aij, diags) )
+            except:
+                break
+        out_Q.close()
+        pass
+
+    in_Q    = mp.Queue()
+    out_Q   = mp.Queue()
+
+    # Build up the input queue
+    num_Q   = 0
+    B       = n / n_threads
+    for i in xrange(0, n, B):
+        j = min(n, i + B)
+        in_Q.put( (i, j) )
+        num_Q += 1
+        pass
+
+    # Launch encoders
+    for i in range(n_threads):
+        mp.Process(target=__consumer, args=(in_Q, out_Q)).start()
+        pass
+
+    diagnostics = []
+    while num_Q > 0:
+        (i, j, Aij, diags) = out_Q.get(True)
+        A[:,i:j] = Aij
+        diagnostics.append(diags)
+        num_Q    -= 1
+        pass
+
+    if output_diagnostics:
+        return (A, diagnostics)
+    else:
+        return A
 #---                            ---#
 
 #--- Dictionary                 ---#
-def dictionary(X, A, max_iter=500, dynamic_rho=True, Dinitial=None):
+def dictionary(X, A, max_iter=1000, dynamic_rho=True, Dinitial=None):
 
     (d2, n) = X.shape
     d2m     = A.shape[0]
@@ -692,7 +744,7 @@ def dictionary(X, A, max_iter=500, dynamic_rho=True, Dinitial=None):
 #---                            ---#
 
 #--- Alternating minimization   ---#
-def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps=500, D=None, **kwargs):
+def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps=1000, D=None, n_threads=1, **kwargs):
     '''
     Alternating minimization to learn convolutional dictionary
 
@@ -709,6 +761,7 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
         max_steps:      number of outer-loop steps
         max_admm_steps: number of inner loop steps
         D:              initial codebook
+        n_threads:      number of parallel encoders to run while training (default: 1)
 
         kwargs:         Additional keyword arguments to be supplied to regularizer functions
 
@@ -797,7 +850,11 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
     error = []
     for T in xrange(max_steps):
         # Encode the data
-        (A, A_diagnostics) = encoder(X, D, g, max_iter=max_admm_steps)
+        if n_threads == 1:
+            (A, A_diagnostics) = encoder(X, D, g, max_iter=max_admm_steps)
+        else:
+            (A, A_diagnostics) = parallel_encoder(X, D, g, n_threads=n_threads, max_iter=max_admm_steps)
+            pass
         diagnostics['encoder'].append(A_diagnostics)
         
         error.append(numpy.mean((D * A - X)**2))
@@ -816,11 +873,19 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
     diagnostics['error']    = numpy.array(error)
 
     # Re-encode the data with the final codebook
-    (A, A_diagnostics) = encoder(X, D, g, max_iter=max_admm_steps)
+    if n_threads > 1:
+        (A, A_diagnostics) = parallel_encoder(X, D, g, n_threads=n_threads, max_iter=max_admm_steps)
+    else:
+        (A, A_diagnostics) = encoder(X, D, g, max_iter=max_admm_steps)
+        pass
     diagnostics['final_encoder'] = A_diagnostics
     
     # Package up the learned encoder function for future use
-    my_encoder  = functools.partial(encoder, D=D, reg=g, max_iter=max_admm_steps, output_diagnostics=False)
+    if n_threads > 1:
+        my_encoder  = functools.partial(parallel_encoder, n_threads=n_threads, D=D, reg=g, max_iter=max_admm_steps, output_diagnostics=False)
+    else:
+        my_encoder  = functools.partial(encoder, D=D, reg=g, max_iter=max_admm_steps, output_diagnostics=False)
+        pass
 
     return (D, A, my_encoder, diagnostics)
 #---                            ---#
