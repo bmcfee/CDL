@@ -383,6 +383,41 @@ def reg_l2_group(X, rho, lam, m, Xout=None):
     return Xout
 
 
+def reg_lowpass(A, rho, lam, width=None, height=None, Xout=None):
+    '''
+        Sobel regularization: assumes each column of X is a columnsToVectord 2d-DFT of a 2d-signal
+
+        Input: 
+                A   = 2*d*m-by-n
+                rho > 0
+                lam > 0
+                w, h: d = w * h
+                Xout:   destination (must be same shape as A)
+
+    '''
+
+    (d2m, n) = A.shape
+    d       = width * height
+    m       = d2m / (2 * d)
+
+    if Xout is None:
+        Xout = numpy.empty_like(A, order='A')
+        pass
+
+    # Build the lowpass filter
+    lowpass   = numpy.array([ [-1, 0, 1] ]) / 2
+#     lowpass   = 1.0 - lowpass
+#     lowpass   = (lowpass + lowpass.T) / 2
+    H       = numpy.fft.fft2(lowpass, s=(height, width)).reshape((d, 1), order='F')
+    H       = numpy.tile(numpy.abs(H), (2 * m, 1))
+
+    S       = (rho / lam) * (1.0 + H**2)**(-1)
+    # Invert the filter
+    Xout[:] = S * A
+
+
+    return Xout
+
 def proj_l2_ball(X, m):
     '''
         Input:      X 2*d*m-by-1 vector  (ndarray) of real and imaginary codewords
@@ -790,14 +825,10 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
 
         #   could be dangerous to normalize if we hit a small column.
         #   random noise should fix it
-        D = D + 0.1 * numpy.random.randn(D.shape[0], D.shape[1])**2
+        D = D + 0.001 * numpy.random.randn(D.shape[0], D.shape[1])**2
 
         D = normalizeDictionary(columnsToDiags(D))
         pass
-
-    # FIXME:  2013-03-08 08:35:06 by Brian McFee <brm2132@columbia.edu>
-    #   l1_time should be a special case of l1_space with W=1.
-    #   maybe be careful with fftn parameters here...
 
     # TODO:   2013-03-08 08:35:57 by Brian McFee <brm2132@columbia.edu>
     #   supervised regularization should be compatible with all other regs
@@ -805,18 +836,14 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
     #   calls the specific regularizers
     #   will need to take Y as an auxiliary parameter...
 
-    # TODO:   2013-03-08 08:37:09 by Brian McFee <brm2132@columbia.edu>
-    #   parallelization:
-    #   should not be difficult in the A-step
-    #   one catch: when carving up the data, we'll need a separate supervised
-    #   regularizer for each worker thread since the Y auxiliary parameter will change
-
     if reg == 'l2_group':
         g   = functools.partial(reg_l2_group, lam=lam, m=m)
     elif reg == 'l1':
         g   = functools.partial(reg_l1_complex, lam=lam)
     elif reg == 'l1_space':
         g   = functools.partial(reg_l1_space, lam=lam, **kwargs)
+    elif reg == 'lowpass':
+        g   = functools.partial(reg_lowpass, lam=lam, **kwargs)
     else:
         raise ValueError('Unknown regularization: %s' % reg)
 
