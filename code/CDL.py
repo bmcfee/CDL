@@ -161,6 +161,21 @@ def normalizeDictionary(D):
 
 
 
+#--- Codebook initialization    ---#
+
+def init_gaussian(X, m):
+    D = numpy.random.randn(X.shape[0], m)
+    return normalizeDictionary(columnsToDiags(D))
+
+def init_random_columns(X, m):
+    D = X[:, numpy.random.randint(0, X.shape[1], m)]
+    return normalizeDictionary(columnsToDiags(D))
+
+def init_svd(X, m):
+    (U, S, V)   = scipy.linalg.svd(X)
+    D           = U[:,:m]
+    return normalizeDictionary(columnsToDiags(D))
+#---                            ---#
 
 #--- Regularization functions   ---#
 def reg_l1_real(X, rho, lam, nonneg=False, Xout=None):
@@ -418,6 +433,64 @@ def reg_lowpass(A, rho, lam, width=None, height=None, Xout=None):
 
     return Xout
 
+def proj_l1_ball(X, m, r=1.0):
+    '''
+        Input:      X 2*d*m-by-1 vector of real+imag codewords
+                    m >0 number of codewords
+                    r radius of the ball to project on (default: 1.0)
+
+        Output:     X where each codeword is projected onto the unit l1 ball
+    '''
+
+    d2m     = X.shape[0]
+    dm      = d2m / 2
+    d       = dm  / m
+
+    # Compute magnitudes and reshape
+    Xabs    = (X[:(d*m)]**2 + X[(d*m):]**2).reshape( (d, m), order='F')**0.5
+
+    # For each column k, find the optimal threshold z[k]
+    Xabs.sort(axis=0)
+
+    # Reverse each column
+    Xabs    = Xabs[::-1]
+
+    # Build up the partial sums
+    D       = (numpy.arange(1.0, d+1.0)**-1 * (Xabs.cumsum(axis=0).T - 1.0)).T
+
+    # Find the break point (if exists)
+    z       = (Xabs < D).argmax(axis=0) + (Xabs > D).all(axis=0) * d
+
+    # Compute thresholds
+    thresh  = D[z-1, range(m)]
+
+    Xout    = numpy.zeros_like(X, order='A')
+
+    # Apply thresholds (woven)
+    column_shrinkage   = r"""
+        for (int k = 0; k < m; k++) {
+            // iterate over codewords
+            
+            // Get the threshold for this element
+            float t = thresh[k];
+
+            for (int j = 0; j < d; j++) {
+                // iterate over coordinates
+
+                // compute magnitude
+                float mag   = sqrt(pow(X[k * d + j], 2) + pow(X[(k + m) * d + j], 2));
+                float scale = (mag < t) ? 0.0 : ( 1 - t / mag);
+
+                // rescale
+                Xout[k * d      + j]    = scale * X[k * d       + j];
+                Xout[(k + m)*d  + j]    = scale * X[(k + m)*d   + j];
+            }
+        }
+    """
+    scipy.weave.inline(column_shrinkage, ['m', 'd', 'thresh', 'X', 'Xout'])
+
+    return Xout
+
 def proj_l2_ball(X, m):
     '''
         Input:      X 2*d*m-by-1 vector  (ndarray) of real and imaginary codewords
@@ -656,13 +729,17 @@ def parallel_encoder(X, D, reg, n_threads=4, max_iter=1000, dynamic_rho=True, ou
 #---                            ---#
 
 #--- Dictionary                 ---#
-def dictionary(X, A, max_iter=1000, dynamic_rho=True, Dinitial=None):
+def dictionary(X, A, max_iter=1000, dynamic_rho=True, Dinitial=None, feasible=None):
 
     (d2, n) = X.shape
     d2m     = A.shape[0]
 
     d       = d2  / 2
     m       = d2m / d2
+
+    if feasible is None:
+        feasible = proj_l2_ball
+        pass
 
     # Initialize ADMM variables
     rho     = TAU ** 8                  # (MAGIC) Dictionary rho likes to get big
@@ -719,7 +796,7 @@ def dictionary(X, A, max_iter=1000, dynamic_rho=True, Dinitial=None):
 
         # Project each basis element onto the l2 ball
         Eold = E
-        E   = proj_l2_ball(D + W, m)
+        E   = feasible(D + W, m)
 
         # Update the residual
         W   = W + D - E
@@ -779,7 +856,7 @@ def dictionary(X, A, max_iter=1000, dynamic_rho=True, Dinitial=None):
 #---                            ---#
 
 #--- Alternating minimization   ---#
-def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps=1000, D=None, n_threads=1, **kwargs):
+def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps=20, max_admm_steps=1000, D=None, n_threads=1, **kwargs):
     '''
     Alternating minimization to learn convolutional dictionary
 
@@ -791,6 +868,10 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
                 l2_group        l2 norm per activation map (Default)
                 l1              l1 norm per (complex) activation map
                 l1_space        l1 norm of codeword activations in space domain (2d activations)
+
+        D_constraint:   constraint on the codewords
+                l2:     each codeword has unit l2 (default)
+                l1:     each codeword has unit l1 (in frequency domain)
 
 
         max_steps:      number of outer-loop steps
@@ -819,15 +900,10 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
     (d2, n) = X.shape
     d = d2 / 2
 
+
+    INIT_DICT = init_svd
     if D is None:
-        # Pick m random columns from the input
-        D = X[:, numpy.random.randint(0, n, m)]
-
-        #   could be dangerous to normalize if we hit a small column.
-        #   random noise should fix it
-        D = D + 0.001 * numpy.random.randn(D.shape[0], D.shape[1])**2
-
-        D = normalizeDictionary(columnsToDiags(D))
+        D = INIT_DICT(X, m)
         pass
 
     # TODO:   2013-03-08 08:35:57 by Brian McFee <brm2132@columbia.edu>
@@ -846,6 +922,13 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
         g   = functools.partial(reg_lowpass, lam=lam, **kwargs)
     else:
         raise ValueError('Unknown regularization: %s' % reg)
+
+    if D_constraint == 'l2':
+        dg  = proj_l2_ball
+    elif D_constraint == 'l1':
+        dg  = proj_l1_ball
+    else:
+        raise ValueError('Unknown dictionary constraint: %s' % D_constraint)
 
     # Reset the diagnostics output
     diagnostics   = {
@@ -889,7 +972,7 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, max_steps=20, max_admm_steps
         print '%2d| A-step MSE=%.3e   | SNR=%3.2fdB' % (T, error[-1], SNR)
 
         # Optimize the codebook
-        (D, D_diagnostics) = dictionary(X, A, max_iter=max_admm_steps)
+        (D, D_diagnostics) = dictionary(X, A, max_iter=max_admm_steps, feasible=dg)
         diagnostics['dictionary'].append(D_diagnostics)
 
         error.append(numpy.mean((D * A - X)**2))
