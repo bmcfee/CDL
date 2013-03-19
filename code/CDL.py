@@ -836,7 +836,19 @@ def dictionary(StS, StX, m, max_iter=1000, dynamic_rho=True, Dinitial=None, feas
 #---                            ---#
 
 #--- Alternating minimization   ---#
-def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps=20, max_admm_steps=1000, D=None, n_threads=1, **kwargs):
+def batch_generator(X, batch_size, max_steps):
+
+    n = X.shape[1]
+
+    for t in xrange(max_steps):
+        # Sample a random subset of columns (with replacement)
+        if batch_size == n:
+            yield X
+        else:
+            yield X[:, numpy.random.randint(0, n, batch_size)]
+    pass
+
+def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps=20, max_admm_steps=1000, D=None, n_threads=1, batch_size=None, **kwargs):
     '''
     Alternating minimization to learn convolutional dictionary
 
@@ -857,7 +869,8 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
         max_steps:      number of outer-loop steps
         max_admm_steps: number of inner loop steps
         D:              initial codebook
-        n_threads:      number of parallel encoders to run while training (default: 1)
+        n_threads:      number of parallel encoders to run while training   (default: 1)
+        batch_size:     number of data points to encode at each step        (default: all)
 
         kwargs:         Additional keyword arguments to be supplied to regularizer functions
 
@@ -880,12 +893,6 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
     (d2, n) = X.shape
     d = d2 / 2
 
-    ###
-    # Initialize the codebook
-    if D is None:
-        INIT_DICT = init_svd
-        D = INIT_DICT(X, m)
-        pass
 
     # TODO:   2013-03-08 08:35:57 by Brian McFee <brm2132@columbia.edu>
     #   supervised regularization should be compatible with all other regs
@@ -923,6 +930,14 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
         raise ValueError('Unknown dictionary constraint: %s' % D_constraint)
 
     ###
+    # Configure online updates
+    if batch_size is None:
+        batch_size = n
+    elif batch_size > n:
+        raise ValueError('batch size cannot exceed data size')
+        pass
+
+    ###
     # Reset the diagnostics output
     diagnostics   = {
         'encoder':          [],
@@ -935,6 +950,7 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
             'lam':              lam,
             'max_steps':        max_steps,
             'max_admm_steps':   max_admm_steps,
+            'batch_size':       batch_size,
             'auxiliary':        kwargs
         },
         'globals':  {
@@ -956,42 +972,52 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
         local_encoder = encoder
         pass
 
-    Xnorm = numpy.mean(X ** 2)
+    alpha   = float(batch_size) / n
 
-    error = []
-    for T in xrange(max_steps):
-        # Encode the data
-        (A, A_diagnostics) = local_encoder(X, D, g, max_iter=max_admm_steps)
+    error   = []
+
+    ###
+    # Initialize the codebook
+    if D is None:
+        D = init_svd(X, m)
+        pass
+    
+    for (T, X_batch) in enumerate(batch_generator(X, batch_size, max_steps), 1):
+
+        ###
+        # Encode the data bacth
+        (A, A_diagnostics) = local_encoder(X_batch, D, g, max_iter=max_admm_steps)
 
         diagnostics['encoder'].append(A_diagnostics)
         
-        error.append(numpy.mean((D * A - X)**2))
-        SNR = 10 * (numpy.log10(Xnorm) - numpy.log10(error[-1]))
-        print '%2d| A-step MSE=%.3e   | SNR=%3.2fdB' % (T, error[-1], SNR)
+        error.append(numpy.mean((D * A - X_batch)**2))
+        print '%2d| A-step MSE=%.3e' % (T, error[-1])
 
-        # Optimize the codebook
         #   TODO:   2013-03-19 12:56:47 by Brian McFee <brm2132@columbia.edu>
         #   parallelize encoding statistics
-        #   TODO:   2013-03-19 12:56:55 by Brian McFee <brm2132@columbia.edu>
-        #   accumulate statistics across batches
-        #       if we accumulate as
-        #       StS <- (1 - alpha) * StS_old    + alpha * StS_new
-        #       and set alpha = batch_size / n
-        #       then this reduces directly to the batch setting
-        (StS, StX)          = encoding_statistics(A, X)
+        (StS_new, StX_new)  = encoding_statistics(A, X)
 
+        if T == 1:
+            # For the first batch, take the encoding statistics as is
+            StS     = StS_new
+            StX     = StX_new
+        else:
+            # All subsequent batches get averaged into to the previous totals
+            StS     = (1 - alpha) * StS     + alpha * StS_new
+            StX     = (1 - alpha) * StX     + alpha * StX_new
+            pass
+
+        ###
+        # Optimize the codebook
         (D, D_diagnostics)  = dictionary(StS, StX, m, max_iter=max_admm_steps, feasible=dg, Dinitial=D)
 
         diagnostics['dictionary'].append(D_diagnostics)
 
-        error.append(numpy.mean((D * A - X)**2))
-        SNR = 10 * (numpy.log10(Xnorm) - numpy.log10(error[-1]))
-        print '__| D-step MSE=%.3e   | SNR=%3.2fdB' %  (error[-1], SNR)
+        error.append(numpy.mean((D * A - X_batch)**2))
+        print '__| D-step MSE=%.3e' %  error[-1]
 
         # TODO:   2013-03-19 12:55:29 by Brian McFee <brm2132@columbia.edu>
         #  at this point, it would be prudent to patch any zeros in the dictionary with random examples
-        
-
         pass
 
     diagnostics['error']    = numpy.array(error)
