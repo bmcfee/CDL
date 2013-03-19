@@ -581,12 +581,12 @@ def encoder(X, D, reg, max_iter=1000, dynamic_rho=True, output_diagnostics=True)
 
     # diagnostics data
     _DIAG     = {
-        'converged':    False,
+        'converged' :   False,
         'err_primal':   [],
-        'err_dual':     [],
+        'err_dual'  :   [],
         'eps_primal':   [],
-        'eps_dual':     [],
-        'rho':          []
+        'eps_dual'  :   [],
+        'rho'       :   []
     }
 
     # ADMM loop
@@ -613,11 +613,11 @@ def encoder(X, D, reg, max_iter=1000, dynamic_rho=True, output_diagnostics=True)
         eps_dual    = O.size**0.5 * ABSTOL + RELTOL * scipy.linalg.norm(O)
 
         # reporting
-        _DIAG['err_primal'].append(ERR_primal)
-        _DIAG['err_dual'].append(ERR_dual)
-        _DIAG['eps_primal'].append(eps_primal)
-        _DIAG['eps_dual'].append(eps_dual)
-        _DIAG['rho'].append(rho)
+        _DIAG['err_primal'  ].append(ERR_primal)
+        _DIAG['err_dual'    ].append(ERR_dual)
+        _DIAG['eps_primal'  ].append(eps_primal)
+        _DIAG['eps_dual'    ].append(eps_dual)
+        _DIAG['rho'         ].append(rho)
         
         
         if ERR_primal < eps_primal and ERR_dual <= eps_dual:
@@ -724,76 +724,64 @@ def encoding_statistics(A, X):
     m = A.shape[0] / X.shape[0]
 
     Si      = columnsToDiags(vectorToColumns(A[:, 0], m))
-    
     StX     = Si.T * X[:, 0]
-    
     StS     = Si.T * Si
     
     for i in xrange(1, n):
         Si          = columnsToDiags(vectorToColumns(A[:, i], m))
 
         StX         = StX + Si.T * X[:, i]
-
         StS         = StS + Si.T * Si
         pass
 
     return (StS / n, StX / n)
 
 
-def dictionary(X, A, max_iter=1000, dynamic_rho=True, Dinitial=None, feasible=None, StS=None, StX=None):
+def dictionary(StS, StX, m, max_iter=1000, dynamic_rho=True, Dinitial=None, feasible=None):
 
-    (d2, n) = X.shape
-    d2m     = A.shape[0]
-
-    d       = d2  / 2
-    m       = d2m / d2
+    d2m     = StX.shape[0]
 
     if feasible is None:
         feasible = proj_l2_ball
         pass
 
     # Initialize ADMM variables
-    rho     = TAU ** 8                  # (MAGIC) Dictionary rho likes to get big
+    rho     = TAU ** 8                              # (MAGIC) Dictionary rho likes to get big
 
-    D       = numpy.zeros( 2 * d * m )  # Unconstrained codebook
-    E       = numpy.zeros_like(D, order='A')       # l2-constrained codebook
-    W       = numpy.zeros_like(E, order='A')       # Scaled dual variables
+    D       = numpy.zeros( d2m )                    # Unconstrained codebook
+    E       = numpy.zeros_like(D, order='A')        # l2-constrained codebook
+    W       = numpy.zeros_like(E, order='A')        # Scaled dual variables
 
     if Dinitial is not None:
-        E   = columnsToVector(diagsToColumns(Dinitial))[:, 0]
-        pass
-
-    # Aggregate the scatter and target matrices, if not already provided
-    if StS is None:
-        (StS, StX) = encoding_statistics(A, X)
+        E[:]    = columnsToVector(diagsToColumns(Dinitial))
         pass
 
     # We need to solve:
     #   D <- (rho * I + StS) \ (StX + rho * (E - W) )
     #   Use the sparse factorization solver to pre-compute cholesky factors
 
-    SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(2 * d * m, 2 * d * m) + StS)
+    SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(d2m, d2m) + StS)
 
     # diagnostics data
     _DIAG     = {
-        'converged':    False,
+        'converged' :   False,
         'err_primal':   [],
-        'err_dual':     [],
+        'err_dual'  :   [],
         'eps_primal':   [],
-        'eps_dual':     [],
-        'rho':          []
+        'eps_dual'  :   [],
+        'rho'       :   []
     }
 
     for t in xrange(max_iter):
         # Solve for the unconstrained codebook
-        D   = SOLVER( StX + rho * (E - W) )
+        D       = SOLVER( StX + rho * (E - W) )
 
         # Project each basis element onto the l2 ball
-        Eold = E
-        E   = feasible(D + W, m)
+        Eold    = E
+        E       = feasible(D + W, m)
 
         # Update the residual
-        W   = W + D - E
+        W       = W + D - E
 
         #   only compute the rest of this loop every T_CHECKUP iterations
         if t % T_CHECKUP != 0:
@@ -807,11 +795,11 @@ def dictionary(X, A, max_iter=1000, dynamic_rho=True, Dinitial=None, feasible=No
         eps_dual    = (W.size**0.5) * ABSTOL + RELTOL * scipy.linalg.norm(W)
         
         # reporting
-        _DIAG['err_primal'].append(ERR_primal)
-        _DIAG['err_dual'].append(ERR_dual)
-        _DIAG['eps_primal'].append(eps_primal)
-        _DIAG['eps_dual'].append(eps_dual)
-        _DIAG['rho'].append(rho)
+        _DIAG['err_primal'  ].append(ERR_primal)
+        _DIAG['err_dual'    ].append(ERR_dual)
+        _DIAG['eps_primal'  ].append(eps_primal)
+        _DIAG['eps_dual'    ].append(eps_dual)
+        _DIAG['rho'         ].append(rho)
         
         if ERR_primal < eps_primal and ERR_dual <= eps_dual:
             _DIAG['converged'] = True
@@ -832,7 +820,7 @@ def dictionary(X, A, max_iter=1000, dynamic_rho=True, Dinitial=None, feasible=No
             pass
 
         if rho_changed:
-            SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(2 * d * m, 2 * d * m) + StS)
+            SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(d2m, d2m) + StS)
             pass
         pass
 
@@ -982,13 +970,24 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
         print '%2d| A-step MSE=%.3e   | SNR=%3.2fdB' % (T, error[-1], SNR)
 
         # Optimize the codebook
-        (D, D_diagnostics) = dictionary(X, A, max_iter=max_admm_steps, feasible=dg)
+        #   TODO:   2013-03-19 12:56:47 by Brian McFee <brm2132@columbia.edu>
+        #   parallelize encoding statistics
+        #   TODO:   2013-03-19 12:56:55 by Brian McFee <brm2132@columbia.edu>
+        #   accumulate statistics across batches
+        (StS, StX)          = encoding_statistics(A, X)
+
+        (D, D_diagnostics)  = dictionary(StS, StX, m, max_iter=max_admm_steps, feasible=dg, Dinitial=D)
 
         diagnostics['dictionary'].append(D_diagnostics)
 
         error.append(numpy.mean((D * A - X)**2))
         SNR = 10 * (numpy.log10(Xnorm) - numpy.log10(error[-1]))
         print '__| D-step MSE=%.3e   | SNR=%3.2fdB' %  (error[-1], SNR)
+
+        # TODO:   2013-03-19 12:55:29 by Brian McFee <brm2132@columbia.edu>
+        #  at this point, it would be prudent to patch any zeros in the dictionary with random examples
+        
+
         pass
 
     diagnostics['error']    = numpy.array(error)
