@@ -729,7 +729,42 @@ def parallel_encoder(X, D, reg, n_threads=4, max_iter=1000, dynamic_rho=True, ou
 #---                            ---#
 
 #--- Dictionary                 ---#
-def dictionary(X, A, max_iter=1000, dynamic_rho=True, Dinitial=None, feasible=None):
+def encoding_statistics(A, X):
+    '''
+    Compute the empirical average of encoding statistics:
+        StS <- 1/n sum_i A[i]' A[i]
+        StX <- 1/n sum_i A[i]' X[i]
+    '''
+
+    n = A.shape[1]
+    m = A.shape[0] / X.shape[0]
+
+    Si      = columnsToDiags(vectorToColumns(A[:, 0], m))
+    
+    # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
+    #  sparse multiply ~= hadamard multiply
+    StX     = Si.T * X[:, 0]
+    
+    # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
+    #  sparse multiply ~= hadamard multiply
+    StS     = Si.T * Si
+    
+    for i in xrange(1, n):
+        Si          = columnsToDiags(vectorToColumns(A[:, i], m))
+
+        # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
+        #  sparse multiply ~= hadamard multiply
+        StX         = StX + Si.T * X[:, i]
+
+        # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
+        #  sparse multiply ~= hadamard multiply
+        StS         = StS + Si.T * Si
+        pass
+
+    return (StS / n, StX / n)
+
+
+def dictionary(X, A, max_iter=1000, dynamic_rho=True, Dinitial=None, feasible=None, StS=None, StX=None):
 
     (d2, n) = X.shape
     d2m     = A.shape[0]
@@ -752,27 +787,10 @@ def dictionary(X, A, max_iter=1000, dynamic_rho=True, Dinitial=None, feasible=No
         E   = columnsToVector(diagsToColumns(Dinitial))[:, 0]
         pass
 
-    # Aggregate the scatter and target matrices
-    def __aggregator():
-        Si      = columnsToDiags(vectorToColumns(A[:, 0], m))
-        # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
-        #  sparse multiply ~= hadamard multiply
-        StX     = Si.T * X[:, 0]
-        # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
-        #  sparse multiply ~= hadamard multiply
-        StS     = Si.T * Si
-        for i in xrange(1, n):
-            Si          = columnsToDiags(vectorToColumns(A[:, i], m))
-            # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
-            #  sparse multiply ~= hadamard multiply
-            StX         = StX + Si.T * X[:, i]
-            # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
-            #  sparse multiply ~= hadamard multiply
-            StS         = StS + Si.T * Si
-            pass
-        return (StS / n, StX / n)
-
-    (StS, StX) = __aggregator()
+    # Aggregate the scatter and target matrices, if not already provided
+    if StS is None:
+        (StS, StX) = encoding_statistics(A, X)
+        pass
 
     # We need to solve:
     #   D <- (rho * I + StS) \ (StX + rho * (E - W) )
