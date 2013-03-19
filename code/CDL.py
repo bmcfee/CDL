@@ -762,6 +762,7 @@ def dictionary(StS, StX, m, max_iter=1000, dynamic_rho=True, Dinitial=None, feas
 
     SOLVER  = scipy.sparse.linalg.factorized( rho * scipy.sparse.eye(d2m, d2m) + StS)
 
+
     # diagnostics data
     _DIAG     = {
         'converged' :   False,
