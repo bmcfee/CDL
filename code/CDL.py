@@ -974,6 +974,10 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
         #   parallelize encoding statistics
         #   TODO:   2013-03-19 12:56:55 by Brian McFee <brm2132@columbia.edu>
         #   accumulate statistics across batches
+        #       if we accumulate as
+        #       StS <- (1 - alpha) * StS_old    + alpha * StS_new
+        #       and set alpha = batch_size / n
+        #       then this reduces directly to the batch setting
         (StS, StX)          = encoding_statistics(A, X)
 
         (D, D_diagnostics)  = dictionary(StS, StX, m, max_iter=max_admm_steps, feasible=dg, Dinitial=D)
