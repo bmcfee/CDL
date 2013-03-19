@@ -931,20 +931,26 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
     #   will need to take Y as an auxiliary parameter...
 
     if reg == 'l2_group':
-        g   = functools.partial(reg_l2_group, lam=lam, m=m)
+        g   = functools.partial(    reg_l2_group,   lam=lam, m=m)
+
     elif reg == 'l1':
-        g   = functools.partial(reg_l1_complex, lam=lam)
+        g   = functools.partial(    reg_l1_complex, lam=lam)
+
     elif reg == 'l1_space':
-        g   = functools.partial(reg_l1_space, lam=lam, **kwargs)
+        g   = functools.partial(    reg_l1_space,   lam=lam, **kwargs)
+
     elif reg == 'lowpass':
-        g   = functools.partial(reg_lowpass, lam=lam, **kwargs)
+        g   = functools.partial(    reg_lowpass,    lam=lam, **kwargs)
+
     else:
         raise ValueError('Unknown regularization: %s' % reg)
 
     if D_constraint == 'l2':
         dg  = proj_l2_ball
+
     elif D_constraint == 'l1':
         dg  = proj_l1_ball
+    
     else:
         raise ValueError('Unknown dictionary constraint: %s' % D_constraint)
 
@@ -973,16 +979,19 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
         }
     }
 
+    if n_threads > 1:
+        local_encoder = functools.partial(parallel_encoder, n_threads=n_threads)
+    else:
+        local_encoder = encoder
+        pass
+
     Xnorm = numpy.mean(X ** 2)
 
     error = []
     for T in xrange(max_steps):
         # Encode the data
-        if n_threads == 1:
-            (A, A_diagnostics) = encoder(X, D, g, max_iter=max_admm_steps)
-        else:
-            (A, A_diagnostics) = parallel_encoder(X, D, g, n_threads=n_threads, max_iter=max_admm_steps)
-            pass
+        (A, A_diagnostics) = local_encoder(X, D, g, max_iter=max_admm_steps)
+
         diagnostics['encoder'].append(A_diagnostics)
         
         error.append(numpy.mean((D * A - X)**2))
@@ -991,6 +1000,7 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
 
         # Optimize the codebook
         (D, D_diagnostics) = dictionary(X, A, max_iter=max_admm_steps, feasible=dg)
+
         diagnostics['dictionary'].append(D_diagnostics)
 
         error.append(numpy.mean((D * A - X)**2))
