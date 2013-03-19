@@ -553,17 +553,11 @@ def encoder(X, D, reg, max_iter=1000, dynamic_rho=True, output_diagnostics=True)
     # Initialize augmented lagrangian weight
     rho = TAU ** -5             # (MAGIC) Encoder rho wants to start small
 
-    # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
-    #  sparse multiply ~= hadamard multiply
     # Precompute D'X
     DX  = D.T * X   
 
     # Precompute dictionary normalization
-    # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
-    #  sparse multiply ~= hadamard multiply
     Dnorm   = (D * D.T).diagonal()
-    # XXX:    2013-03-06 14:48:36 by Brian McFee <brm2132@columbia.edu>
-    #  sparse multiply ~= axis-scaling
     Dinv    = scipy.sparse.spdiags( (1.0 + Dnorm / rho)**-1, 0, d, d)
 
     #--- Regression function        ---#
@@ -581,15 +575,7 @@ def encoder(X, D, reg, max_iter=1000, dynamic_rho=True, output_diagnostics=True)
         Output:
             X = 1/rho  *  (I - 1/rho * A' * Z * A) * b
         '''
-        # FIXME:  2013-03-05 16:26:55 by Brian McFee <brm2132@columbia.edu>
-        # profile this on real data: make sure all strides and row/column-majorness is optimal     
     
-        # FIXME:  2013-03-06 14:01:12 by Brian McFee <brm2132@columbia.edu>
-        # Use a different data packing to get rid of sparsity?
-        # or implement our own broadcasty-hadamard product via weave and eliminate sparsity?
-
-        # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
-        #  sparse multiply ~= hadamard multiply
         return (_b - (_D.T * (_Z * (_D * _b)) / rho)) / rho
     #---                            ---#
 
@@ -655,8 +641,6 @@ def encoder(X, D, reg, max_iter=1000, dynamic_rho=True, output_diagnostics=True)
 
         # Update Dinv
         if rho_changed:
-            # XXX:    2013-03-06 14:48:36 by Brian McFee <brm2132@columbia.edu>
-            #  sparse multiply ~= axis-scaling
             Dinv = scipy.sparse.spdiags( (1.0 + Dnorm / rho)**-1.0, 0, d, d)
             pass
         pass
@@ -741,23 +725,15 @@ def encoding_statistics(A, X):
 
     Si      = columnsToDiags(vectorToColumns(A[:, 0], m))
     
-    # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
-    #  sparse multiply ~= hadamard multiply
     StX     = Si.T * X[:, 0]
     
-    # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
-    #  sparse multiply ~= hadamard multiply
     StS     = Si.T * Si
     
     for i in xrange(1, n):
         Si          = columnsToDiags(vectorToColumns(A[:, i], m))
 
-        # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
-        #  sparse multiply ~= hadamard multiply
         StX         = StX + Si.T * X[:, i]
 
-        # XXX:    2013-03-06 14:02:10 by Brian McFee <brm2132@columbia.edu>
-        #  sparse multiply ~= hadamard multiply
         StS         = StS + Si.T * Si
         pass
 
@@ -868,8 +844,6 @@ def dictionary(X, A, max_iter=1000, dynamic_rho=True, Dinitial=None, feasible=No
     _DIAG['rho' ]           = numpy.array(_DIAG['rho'])
     _DIAG['num_steps']      = t
 
-    # XXX:    2013-03-06 14:49:59 by Brian McFee <brm2132@columbia.edu>
-    #  diags construction
     return (columnsToDiags(vectorToColumns(E, m)), _DIAG)
 #---                            ---#
 
@@ -918,9 +892,10 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
     (d2, n) = X.shape
     d = d2 / 2
 
-
-    INIT_DICT = init_svd
+    ###
+    # Initialize the codebook
     if D is None:
+        INIT_DICT = init_svd
         D = INIT_DICT(X, m)
         pass
 
@@ -930,6 +905,8 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
     #   calls the specific regularizers
     #   will need to take Y as an auxiliary parameter...
 
+    ###
+    # Configure the encoding regularizer
     if reg == 'l2_group':
         g   = functools.partial(    reg_l2_group,   lam=lam, m=m)
 
@@ -945,6 +922,9 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
     else:
         raise ValueError('Unknown regularization: %s' % reg)
 
+
+    ###
+    # Configure the constraint on the dictionary
     if D_constraint == 'l2':
         dg  = proj_l2_ball
 
@@ -954,6 +934,7 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
     else:
         raise ValueError('Unknown dictionary constraint: %s' % D_constraint)
 
+    ###
     # Reset the diagnostics output
     diagnostics   = {
         'encoder':          [],
@@ -979,6 +960,8 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
         }
     }
 
+    ###
+    # Configure the encoder
     if n_threads > 1:
         local_encoder = functools.partial(parallel_encoder, n_threads=n_threads)
     else:
