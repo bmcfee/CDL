@@ -982,14 +982,6 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
 
     diagnostics['error']    = numpy.array(error)
 
-    # Re-encode the data with the final codebook
-    if n_threads > 1:
-        (A, A_diagnostics) = parallel_encoder(X, D, g, n_threads=n_threads, max_iter=max_admm_steps)
-    else:
-        (A, A_diagnostics) = encoder(X, D, g, max_iter=max_admm_steps)
-        pass
-    diagnostics['final_encoder'] = A_diagnostics
-    
     # Package up the learned encoder function for future use
     if n_threads > 1:
         my_encoder  = functools.partial(parallel_encoder, n_threads=n_threads, D=D, reg=g, max_iter=max_admm_steps, output_diagnostics=False)
@@ -997,5 +989,5 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
         my_encoder  = functools.partial(encoder, D=D, reg=g, max_iter=max_admm_steps, output_diagnostics=False)
         pass
 
-    return (D, A, my_encoder, diagnostics)
+    return (my_encoder, D, diagnostics)
 #---                            ---#
