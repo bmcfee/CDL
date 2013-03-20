@@ -13,12 +13,15 @@ import functools
 import multiprocessing as mp
 
 #--- magic numbers              ---#
+# NOTE :2013-03-20 12:04:50 by Brian McFee <brm2132@columbia.edu>
+#  it is of utmost importance that these numbers be floats and not ints.
+
 RHO_MIN     =   1e-4        # Minimum allowed scale for augmenting term rho
 RHO_MAX     =   1e4         # Maximum allowed scale for rho
 ABSTOL      =   1e-4        # absolute tolerance for convergence criteria
 RELTOL      =   1e-3        # relative tolerance
-MU          =   3.0         # maximum ratio between primal and dual residuals
-TAU         =   2.0         # scaling for rho when primal/dual exceeds MU
+MU          =   3e0         # maximum ratio between primal and dual residuals
+TAU         =   2e0         # scaling for rho when primal/dual exceeds MU
 T_CHECKUP   =   10          # number of steps between convergence tests
 #---                            ---#
 
