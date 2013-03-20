@@ -992,7 +992,7 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
         diagnostics['encoder'].append(A_diagnostics)
         
         error.append(numpy.mean((D * A - X_batch)**2))
-        print '%2d| A-step MSE=%.3e' % (T, error[-1])
+        print '%4d| [A] MSE=%.3e' % (T, error[-1]),
 
         #   TODO:   2013-03-19 12:56:47 by Brian McFee <brm2132@columbia.edu>
         #   parallelize encoding statistics
@@ -1017,7 +1017,7 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
         diagnostics['dictionary'].append(D_diagnostics)
 
         error.append(numpy.mean((D * A - X_batch)**2))
-        print '__| D-step MSE=%.3e' %  error[-1]
+        print '\t| [D] MSE=%.3e |' %  error[-1]
 
         # TODO:   2013-03-19 12:55:29 by Brian McFee <brm2132@columbia.edu>
         #  at this point, it would be prudent to patch any zeros in the dictionary with random examples
