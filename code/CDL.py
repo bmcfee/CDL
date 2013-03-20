@@ -20,8 +20,8 @@ RHO_MIN     =   1e-4        # Minimum allowed scale for augmenting term rho
 RHO_MAX     =   1e4         # Maximum allowed scale for rho
 ABSTOL      =   1e-4        # absolute tolerance for convergence criteria
 RELTOL      =   1e-3        # relative tolerance
-MU          =   3e0         # maximum ratio between primal and dual residuals
-TAU         =   2e0         # scaling for rho when primal/dual exceeds MU
+MU          =   1e0         # maximum ratio between primal and dual residuals
+TAU         =   1.5e0       # scaling for rho when primal/dual exceeds MU
 T_CHECKUP   =   10          # number of steps between convergence tests
 #---                            ---#
 
@@ -74,7 +74,7 @@ def diagsToColumns(Q):
 
     d   = d2    / 2
     dm  = d2m   / 2
-    m   = dm / d
+    m   = dm    / d
     
     D = numpy.empty( (d2, m) )
 
@@ -423,13 +423,11 @@ def reg_lowpass(A, rho, lam, width=None, height=None, Xout=None):
         pass
 
     # Build the lowpass filter
-    lowpass   = numpy.array([ [-1, 0, 1] ]) / 2
-#     lowpass   = 1.0 - lowpass
-#     lowpass   = (lowpass + lowpass.T) / 2
-    H       = numpy.fft.fft2(lowpass, s=(height, width)).reshape((d, 1), order='F')
-    H       = numpy.tile(numpy.abs(H), (2 * m, 1))
+    lowpass     = numpy.array([ [-1, 0, 1] ]) / 2
+    H           = numpy.fft.fft2(lowpass, s=(height, width)).reshape((d, 1), order='F')
+    H           = numpy.tile(numpy.abs(H), (2 * m, 1))
 
-    S       = (rho / lam) * (1.0 + H**2)**(-1)
+    S           = (rho / lam) * (1.0 + H**2)**(-1)
     # Invert the filter
     Xout[:] = S * A
 
@@ -632,11 +630,11 @@ def encoder(X, D, reg, max_iter=1000, dynamic_rho=True, output_diagnostics=True)
 
         rho_changed = False
 
-        if ERR_primal > MU * ERR_dual and rho < RHO_MAX:
+        if ERR_primal > MU * ERR_dual and rho * TAU < RHO_MAX:
             rho         = rho   * TAU
             O           = O     / TAU
             rho_changed = True
-        elif ERR_dual > MU * ERR_primal and rho > RHO_MIN:
+        elif ERR_dual > MU * ERR_primal and rho / TAU > RHO_MIN:
             rho         = rho   / TAU
             O           = O     * TAU
             rho_changed = True
@@ -733,8 +731,8 @@ def encoding_statistics(A, X):
     for i in xrange(1, n):
         Si          = columnsToDiags(vectorToColumns(A[:, i], m))
 
-        StX         = StX + Si.T * X[:, i]
         StS         = StS + Si.T * Si
+        StX         = StX + Si.T * X[:, i]
         pass
 
     return (StS / n, StX / n)
@@ -751,7 +749,7 @@ def dictionary(StS, StX, m, max_iter=1000, dynamic_rho=True, Dinitial=None, feas
     # Initialize ADMM variables
     rho     = TAU ** -2                             # (MAGIC) Dictionary rho likes to get big
 
-    D       = numpy.zeros( d2m )                    # Unconstrained codebook
+    D       = numpy.zeros( d2m, order='F' )                    # Unconstrained codebook
     E       = numpy.zeros_like(D, order='A')        # l2-constrained codebook
     W       = numpy.zeros_like(E, order='A')        # Scaled dual variables
 
@@ -813,11 +811,11 @@ def dictionary(StS, StX, m, max_iter=1000, dynamic_rho=True, Dinitial=None, feas
             continue
 
         rho_changed = False
-        if ERR_primal > MU * ERR_dual and rho < RHO_MAX:
+        if ERR_primal > MU * ERR_dual and rho * TAU < RHO_MAX:
             rho = rho   * TAU
             W   = W     / TAU
             rho_changed = True
-        elif ERR_dual > MU * ERR_primal and rho > RHO_MIN:
+        elif ERR_dual > MU * ERR_primal and rho / TAU > RHO_MIN:
             rho = rho   / TAU
             W   = W     * TAU
             rho_changed = True
@@ -998,7 +996,7 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
 
         #   TODO:   2013-03-19 12:56:47 by Brian McFee <brm2132@columbia.edu>
         #   parallelize encoding statistics
-        (StS_new, StX_new)  = encoding_statistics(A, X)
+        (StS_new, StX_new)  = encoding_statistics(A, X_batch)
 
         alpha = (1.0 - 1.0/T)**beta
 
@@ -1008,8 +1006,8 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
             StX     = StX_new
         else:
             # All subsequent batches get averaged into to the previous totals
-            StS     = alpha * StS     + (1-alpha) * StS_new
-            StX     = alpha * StX     + (1-alpha) * StX_new
+            StS     = alpha * StS     + (1.0-alpha) * StS_new
+            StX     = alpha * StX     + (1.0-alpha) * StX_new
             pass
 
         ###
