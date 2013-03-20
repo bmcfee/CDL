@@ -554,7 +554,7 @@ def encoder(X, D, reg, max_iter=1000, dynamic_rho=True, output_diagnostics=True)
     O   = numpy.zeros( (d*m, n) )
 
     # Initialize augmented lagrangian weight
-    rho = TAU ** -5             # (MAGIC) Encoder rho wants to start small
+    rho = TAU ** -3             # (MAGIC) Encoder rho wants to start small
 
     # Precompute D'X
     DX  = D.T * X   
@@ -749,7 +749,7 @@ def dictionary(StS, StX, m, max_iter=1000, dynamic_rho=True, Dinitial=None, feas
         pass
 
     # Initialize ADMM variables
-    rho     = TAU ** 8                              # (MAGIC) Dictionary rho likes to get big
+    rho     = TAU ** -2                             # (MAGIC) Dictionary rho likes to get big
 
     D       = numpy.zeros( d2m )                    # Unconstrained codebook
     E       = numpy.zeros_like(D, order='A')        # l2-constrained codebook
