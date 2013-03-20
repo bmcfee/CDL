@@ -175,7 +175,11 @@ def init_random_columns(X, m):
     return normalizeDictionary(columnsToDiags(D))
 
 def init_svd(X, m):
-    (U, S, V)   = scipy.linalg.svd(X)
+    # Draw a subsample
+    (d, n)      = X.shape
+    n_sample    = min(n, m**2)
+    Xsamp       = X[:, numpy.random.randint(0, n, n_sample)]
+    (U, S, V)   = scipy.linalg.svd(Xsamp)
     D           = U[:,:m]
     return normalizeDictionary(columnsToDiags(D))
 #---                            ---#
