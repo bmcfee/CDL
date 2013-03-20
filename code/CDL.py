@@ -18,7 +18,7 @@ RHO_MAX     =   1e4         # Maximum allowed scale for rho
 ABSTOL      =   1e-4        # absolute tolerance for convergence criteria
 RELTOL      =   1e-3        # relative tolerance
 MU          =   3.0         # maximum ratio between primal and dual residuals
-TAU         =   2           # scaling for rho when primal/dual exceeds MU
+TAU         =   2.0         # scaling for rho when primal/dual exceeds MU
 T_CHECKUP   =   10          # number of steps between convergence tests
 #---                            ---#
 
@@ -973,8 +973,7 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
         local_encoder = encoder
         pass
 
-    alpha   = float(batch_size) / n
-
+    beta    = 1.0
     error   = []
 
     ###
@@ -998,14 +997,16 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
         #   parallelize encoding statistics
         (StS_new, StX_new)  = encoding_statistics(A, X)
 
+        alpha = (1.0 - 1.0/T)**beta
+
         if T == 1:
             # For the first batch, take the encoding statistics as is
             StS     = StS_new
             StX     = StX_new
         else:
             # All subsequent batches get averaged into to the previous totals
-            StS     = (1 - alpha) * StS     + alpha * StS_new
-            StX     = (1 - alpha) * StX     + alpha * StX_new
+            StS     = alpha * StS     + (1-alpha) * StS_new
+            StX     = alpha * StX     + (1-alpha) * StX_new
             pass
 
         ###
