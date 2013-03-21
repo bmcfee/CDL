@@ -20,7 +20,7 @@ RHO_MIN     =   1e-4        # Minimum allowed scale for augmenting term rho
 RHO_MAX     =   1e4         # Maximum allowed scale for rho
 ABSTOL      =   1e-4        # absolute tolerance for convergence criteria
 RELTOL      =   1e-3        # relative tolerance
-MU          =   1e0         # maximum ratio between primal and dual residuals
+MU          =   2e0         # maximum ratio between primal and dual residuals
 TAU         =   1.5e0       # scaling for rho when primal/dual exceeds MU
 T_CHECKUP   =   10          # number of steps between convergence tests
 #---                            ---#
@@ -1021,7 +1021,8 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
         diagnostics['dictionary'].append(D_diagnostics)
 
         error.append(numpy.mean((D * A - X_batch)**2))
-        print '\t| [D] MSE=%.3e |' %  error[-1]
+        print '\t| [D] MSE=%.3e' %  error[-1],
+        print '\t| [A-D] %.3e' % (error[-2] - error[-1])
 
         # TODO:   2013-03-19 12:55:29 by Brian McFee <brm2132@columbia.edu>
         #  at this point, it would be prudent to patch any zeros in the dictionary with random examples
