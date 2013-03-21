@@ -236,7 +236,7 @@ def reg_l1_real(X, rho, lam, nonneg=False, Xout=None):
     # Apply the soft-thresholding operator
     return Xout
 
-def reg_l1_space(A, rho, lam, width=None, height=None, nonneg=False, Xout=None):
+def reg_l1_space(A, rho, lam, width=None, height=None, nonneg=False, fft_pad=False, Xout=None):
     '''
         Spatial L1 sparsity: assumes each column of X is a columnsToVectord 2d-DFT of a 2d-signal
 
@@ -249,16 +249,22 @@ def reg_l1_space(A, rho, lam, width=None, height=None, nonneg=False, Xout=None):
 
     '''
 
-    (d2m, n) = A.shape
-    d       = width * height
-    m       = d2m / (2 * d)
+    if fft_pad:
+        # If we have a padded FFT, then width and height should double
+        width   = 2 * width
+        height  = 2 * height
+        pass
+
+    (d2m, n)    = A.shape
+    d           = width * height
+    m           = d2m / (2 * d)
 
     if Xout is None:
-        Xout = numpy.empty_like(A, order='A')
+        Xout    = numpy.empty_like(A, order='A')
         pass
 
     # Reshape activations, transform each one back into image space
-    Aspace  = numpy.fft.ifft2(numpy.reshape(real2ToComplex(A), (height, width, m, n), order='F'), axes=(0, 1)).real
+    Aspace      = numpy.fft.ifft2(numpy.reshape(real2ToComplex(A), (height, width, m, n), order='F'), axes=(0, 1)).real
 
     # Apply shrinkage
     # FIXME:  2013-03-11 12:19:56 by Brian McFee <brm2132@columbia.edu>
@@ -266,6 +272,11 @@ def reg_l1_space(A, rho, lam, width=None, height=None, nonneg=False, Xout=None):
     Aspace = Aspace.flatten(order='F')
     reg_l1_real(Aspace, rho, lam, nonneg, Aspace)
     Aspace = Aspace.reshape((height, width, m, n), order='F')
+
+    if fft_pad:
+        # In a padded FFT, threshold out all out-of-scope activations
+        Aspace[(height/2):, (width/2):, :, :] = 0.0
+        pass
 
     # Transform back, reshape, and separate real from imaginary
     Xout[:] = complexToReal2(numpy.reshape(numpy.fft.fft2(Aspace, axes=(0, 1)), (height * width * m, n), order='F'))[:]
