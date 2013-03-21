@@ -20,8 +20,8 @@ RHO_MIN     =   1e-4        # Minimum allowed scale for augmenting term rho
 RHO_MAX     =   1e4         # Maximum allowed scale for rho
 ABSTOL      =   1e-4        # absolute tolerance for convergence criteria
 RELTOL      =   1e-3        # relative tolerance
-MU          =   2e0         # maximum ratio between primal and dual residuals
-TAU         =   1.5e0       # scaling for rho when primal/dual exceeds MU
+MU          =   5e0         # maximum ratio between primal and dual residuals
+TAU         =   2e0         # scaling for rho when primal/dual exceeds MU
 T_CHECKUP   =   10          # number of steps between convergence tests
 #---                            ---#
 
@@ -538,7 +538,7 @@ def proj_l2_ball(X, m):
 
 
 #--- Encoder                    ---#
-def encoder(X, D, reg, max_iter=1000, dynamic_rho=True, output_diagnostics=True):
+def __encoder(X, D, reg, max_iter=1000, output_diagnostics=True):
     '''
     Encoder
 
@@ -552,7 +552,6 @@ def encoder(X, D, reg, max_iter=1000, dynamic_rho=True, output_diagnostics=True)
 
         max_iter:   # of iterations to run the encoder  (Default: 30)
 
-        dynamic_rho: re-scale the augmented lagrangian term?    (Default: False)
 
     Output:
         A:          2dm-by-n    encoding matrix
@@ -640,8 +639,6 @@ def encoder(X, D, reg, max_iter=1000, dynamic_rho=True, output_diagnostics=True)
             _DIAG['converged']  = True
             break
 
-        if not dynamic_rho:
-            continue
 
         rho_changed = False
 
@@ -674,10 +671,14 @@ def encoder(X, D, reg, max_iter=1000, dynamic_rho=True, output_diagnostics=True)
     else:
         return Z
 
-def parallel_encoder(X, D, reg, n_threads=4, max_iter=1000, dynamic_rho=True, output_diagnostics=True):
+def parallel_encoder(X, D, reg, n_threads=4, max_iter=1000, output_diagnostics=True):
 
     n   = X.shape[1]
     dm  = D.shape[1]
+
+    # Punt to the local encoder if we're single-threaded or don't have enough data to distrubute
+    if n_threads == 1 or n < n_threads:
+        return __encoder(X, D, reg, max_iter, output_diagnostics)
 
     A   = numpy.empty( (dm, n), order='F')
 
@@ -686,9 +687,9 @@ def parallel_encoder(X, D, reg, n_threads=4, max_iter=1000, dynamic_rho=True, ou
             try:
                 (i, j)          = in_Q.get(True, 1)
                 if output_diagnostics:
-                    (Aij, diags)    = encoder(X[:,i:j], D, reg, max_iter, dynamic_rho, output_diagnostics)
+                    (Aij, diags)    = __encoder(X[:,i:j], D, reg, max_iter, output_diagnostics)
                 else:
-                    Aij             = encoder(X[:,i:j], D, reg, max_iter, dynamic_rho, output_diagnostics)
+                    Aij             = __encoder(X[:,i:j], D, reg, max_iter, output_diagnostics)
                     diags           = None
 
                 out_Q.put( (i, j, Aij, diags) )
@@ -753,7 +754,7 @@ def encoding_statistics(A, X):
     return (StS / n, StX / n)
 
 
-def dictionary(StS, StX, m, max_iter=1000, dynamic_rho=True, Dinitial=None, feasible=None):
+def dictionary(StS, StX, m, max_iter=1000, Dinitial=None, feasible=None):
 
     d2m     = StX.shape[0]
 
@@ -821,9 +822,6 @@ def dictionary(StS, StX, m, max_iter=1000, dynamic_rho=True, Dinitial=None, feas
         if ERR_primal < eps_primal and ERR_dual <= eps_dual:
             _DIAG['converged'] = True
             break
-
-        if not dynamic_rho:
-            continue
 
         rho_changed = False
         if ERR_primal > MU * ERR_dual and rho * TAU < RHO_MAX:
@@ -983,11 +981,7 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
 
     ###
     # Configure the encoder
-    if n_threads > 1:
-        local_encoder = functools.partial(parallel_encoder, n_threads=n_threads)
-    else:
-        local_encoder = encoder
-        pass
+    local_encoder = functools.partial(parallel_encoder, n_threads=n_threads)
 
     beta    = 1.0
     error   = []
@@ -1042,11 +1036,7 @@ def learn_dictionary(X, m, reg='l2_group', lam=1e0, D_constraint='l2', max_steps
     diagnostics['error']    = numpy.array(error)
 
     # Package up the learned encoder function for future use
-    if n_threads > 1:
-        my_encoder  = functools.partial(parallel_encoder, n_threads=n_threads, D=D, reg=g, max_iter=max_admm_steps, output_diagnostics=False)
-    else:
-        my_encoder  = functools.partial(encoder, D=D, reg=g, max_iter=max_admm_steps, output_diagnostics=False)
-        pass
+    my_encoder  = functools.partial(parallel_encoder, n_threads=n_threads, D=D, reg=g, max_iter=max_admm_steps, output_diagnostics=False)
 
     return (my_encoder, D, diagnostics)
 #---                            ---#
