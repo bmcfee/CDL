@@ -400,7 +400,7 @@ def test_reg_l1_space():
 
         # Now do it again with pre-allocation
         Xout_pre = numpy.empty_like(X, order='A')
-        CDL.reg_l1_space(X, rho, lam, w, h, nonneg, Xout_pre)
+        CDL.reg_l1_space(X, rho, lam, width=w, height=h, nonneg=nonneg, Xout=Xout_pre)
 
         # Convert back to complex
         Xout_cplx_pre = CDL.real2ToComplex(Xout_pre)
