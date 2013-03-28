@@ -16,13 +16,13 @@ import multiprocessing as mp
 # NOTE :2013-03-20 12:04:50 by Brian McFee <brm2132@columbia.edu>
 #  it is of utmost importance that these numbers be floats and not ints.
 
-RHO_INIT_A  =   2e-5        # Initial value for rho (encoder)
+RHO_INIT_A  =   2e-3        # Initial value for rho (encoder)
 RHO_INIT_D  =   2e-3        # Initial value for rho (dictionary)
 RHO_MIN     =   1e-6        # Minimum allowed scale for augmenting term rho
 RHO_MAX     =   1e6         # Maximum allowed scale for rho
 ABSTOL      =   1e-4        # absolute tolerance for convergence criteria
 RELTOL      =   1e-3        # relative tolerance
-MU          =   4e0         # maximum ratio between primal and dual residuals
+MU          =   1e1         # maximum ratio between primal and dual residuals
 TAU         =   2e0         # scaling for rho when primal/dual exceeds MU
 T_CHECKUP   =   5           # number of steps between convergence tests
 #---                            ---#
