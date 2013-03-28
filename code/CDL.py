@@ -16,13 +16,15 @@ import multiprocessing as mp
 # NOTE :2013-03-20 12:04:50 by Brian McFee <brm2132@columbia.edu>
 #  it is of utmost importance that these numbers be floats and not ints.
 
-RHO_MIN     =   1e-4        # Minimum allowed scale for augmenting term rho
-RHO_MAX     =   1e4         # Maximum allowed scale for rho
+RHO_INIT_A  =   2e-5        # Initial value for rho (encoder)
+RHO_INIT_D  =   2e-3        # Initial value for rho (dictionary)
+RHO_MIN     =   1e-6        # Minimum allowed scale for augmenting term rho
+RHO_MAX     =   1e6         # Maximum allowed scale for rho
 ABSTOL      =   1e-4        # absolute tolerance for convergence criteria
 RELTOL      =   1e-3        # relative tolerance
-MU          =   5e0         # maximum ratio between primal and dual residuals
+MU          =   4e0         # maximum ratio between primal and dual residuals
 TAU         =   2e0         # scaling for rho when primal/dual exceeds MU
-T_CHECKUP   =   10          # number of steps between convergence tests
+T_CHECKUP   =   5           # number of steps between convergence tests
 #---                            ---#
 
 #--- Utility functions          ---#
@@ -499,7 +501,7 @@ def __encoder(X, D, reg, max_iter=1000, output_diagnostics=True):
     O   = numpy.zeros( (d*m, n) )
 
     # Initialize augmented lagrangian weight
-    rho = TAU ** -3             # (MAGIC) Encoder rho wants to start small
+    rho = RHO_INIT_A
 
     # Precompute D'X
     DX  = D.T * X   
@@ -633,7 +635,9 @@ def parallel_encoder(X, D, reg, n_threads=4,
     # Punt to the local encoder if we're single-threaded or don't have enough 
     # data to distrubute
     if n_threads == 1 or n < n_threads:
-        return __encoder(X, D, reg, max_iter, output_diagnostics)
+        return __encoder(X, D, reg, 
+                         max_iter=max_iter, 
+                         output_diagnostics=output_diagnostics)
 
     A   = numpy.empty( (dm, n), order='F')
 
@@ -644,10 +648,12 @@ def parallel_encoder(X, D, reg, n_threads=4,
 
                 if output_diagnostics:
                     (a_ij, diags)   = __encoder(X[:, i:j], D, reg, 
-                                                max_iter, output_diagnostics)
+                                                max_iter=max_iter, 
+                                                output_diagnostics=output_diagnostics)
                 else:
                     a_ij            = __encoder(X[:, i:j], D, reg, 
-                                                max_iter, output_diagnostics)
+                                                max_iter=max_iter, 
+                                                output_diagnostics=output_diagnostics)
                     diags           = None
 
                 output_queue.put( (i, j, a_ij, diags) )
@@ -714,7 +720,7 @@ def dictionary(StS, StX, m, max_iter=1000, Dinitial=None):
     d2m     = StX.shape[0]
 
     # Initialize ADMM variables
-    rho     = TAU ** -2                 
+    rho     = RHO_INIT_D
 
     D       = numpy.zeros( d2m, order='F' )         # Unconstrained codebook
     E       = numpy.zeros_like(D, order='A')        # l2-constrained codebook
@@ -903,6 +909,8 @@ def learn_dictionary(X, m,  reg='l2_group',
             'auxiliary':        kwargs
         },
         'globals':  {
+            'rho_init_a':   RHO_INIT_A,
+            'rho_init_d':   RHO_INIT_D,
             'rho_min':      RHO_MIN,
             'rho_max':      RHO_MAX,
             'abs_tol':      ABSTOL,
@@ -967,6 +975,9 @@ def learn_dictionary(X, m,  reg='l2_group',
         # TODO:   2013-03-19 12:55:29 by Brian McFee <brm2132@columbia.edu>
         # at this point, it would be prudent to patch any zeros in the 
         # dictionary with random examples
+
+        # Rescale the dictionary: this can only help
+        D = normalize_dictionary(D)
 
 
     diagnostics['error'] = numpy.array(error)
