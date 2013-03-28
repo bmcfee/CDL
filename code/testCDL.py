@@ -10,13 +10,13 @@ import functools
 EQ = functools.partial(numpy.allclose, atol=1e-6, rtol=1e-4)
 
 #-- Utility functions --#
-def test_complexToReal2():
+def test_complex_to_real2():
     # Generate random d-by-n complex matrices of various sizes
-    # verify that complexToReal2 correctly separates real / imaginary
+    # verify that complex_to_real2 correctly separates real / imaginary
 
     def __test(d, n):
         X_cplx  = numpy.random.randn(d, n) + 1.j * numpy.random.randn(d, n)
-        X_real2 = CDL.complexToReal2(X_cplx)
+        X_real2 = CDL.complex_to_real2(X_cplx)
 
         # Verify shape match
         assert (X_cplx.shape[0] * 2  == X_real2.shape[0] and
@@ -33,13 +33,13 @@ def test_complexToReal2():
         pass
     pass
 
-def test_real2ToComplex():
+def test_real2_to_complex():
     # Generate random 2d-by-n real matrices
-    # verify that real2ToComplex correctly combines the top and bottom halves
+    # verify that real2_to_complex correctly combines the top and bottom halves
 
     def __test(d, n):
         X_real2 = numpy.random.randn(2 * d, n)
-        X_cplx  = CDL.real2ToComplex(X_real2)
+        X_cplx  = CDL.real2_to_complex(X_real2)
 
         # Verify shape match
         assert (X_cplx.shape[0] * 2  == X_real2.shape[0] and
@@ -56,7 +56,7 @@ def test_real2ToComplex():
         pass
     pass
 
-def test_columnsToDiags():
+def test_columns_to_diags():
 
     def __test(d, m):
         # Generate a random 2d-by-n matrix
@@ -67,7 +67,7 @@ def test_columnsToDiags():
         B = X[d:, :]
 
         # Convert to its diagonal-block form
-        Q = CDL.columnsToDiags(X)
+        Q = CDL.columns_to_diags(X)
         
         for k in range(m):
             for j in range(d):
@@ -88,13 +88,13 @@ def test_columnsToDiags():
         pass
     pass
 
-def test_diagsToColumns():
-    # This test assumes that columnsToDiags is correct.
+def test_diags_to_columns():
+    # This test assumes that columns_to_diags is correct.
 
     def __test(d, m):
         X = numpy.random.randn(2 * d, m)
-        Q = CDL.columnsToDiags(X)
-        X_back  = CDL.diagsToColumns(Q)
+        Q = CDL.columns_to_diags(X)
+        X_back  = CDL.diags_to_columns(Q)
         assert EQ(X, X_back)
         pass
 
@@ -105,7 +105,7 @@ def test_diagsToColumns():
     pass
 
 
-def test_columnsToVector():
+def test_columns_to_vector():
     def __test(d, m):
         # Generate a random matrix
         X = numpy.random.randn(2 * d, m)
@@ -115,7 +115,7 @@ def test_columnsToVector():
         B = X[d:, :]
 
         # Vectorize
-        V = CDL.columnsToVector(X)
+        V = CDL.columns_to_vector(X)
 
         # Equality-test
         # A[:,k] => V[d * k : d * (k+1)]
@@ -133,13 +133,13 @@ def test_columnsToVector():
         pass
     pass
 
-def test_vectorToColumns():
-    # This test assumes that columnsToVector is correct.
+def test_vector_to_columns():
+    # This test assumes that columns_to_vector is correct.
 
     def __test(d, m):
         X = numpy.random.randn(2 * d, m)
-        V = CDL.columnsToVector(X)
-        X_back = CDL.vectorToColumns(V, m)
+        V = CDL.columns_to_vector(X)
+        X_back = CDL.vector_to_columns(V, m)
 
         assert EQ(X, X_back)
         pass
@@ -150,19 +150,19 @@ def test_vectorToColumns():
         pass
     pass
 
-def test_normalizeDictionary():
+def test_normalize_dictionary():
     def __test(d, m):
         # Generate a random dictionary
         X       = numpy.random.randn(2 * d, m)
 
         # Convert to diagonals
-        Xdiags  = CDL.columnsToDiags(X)
+        Xdiags  = CDL.columns_to_diags(X)
 
         # Normalize
-        N_Xdiag = CDL.normalizeDictionary(Xdiags)
+        N_Xdiag = CDL.normalize_dictionary(Xdiags)
 
         # Convert back
-        N_X     = CDL.diagsToColumns(N_Xdiag)
+        N_X     = CDL.diags_to_columns(N_Xdiag)
 
         # 1. verify unit norms
         norms   = numpy.sum(N_X**2, axis=0)**0.5
@@ -192,7 +192,7 @@ def test_proj_l2_ball():
         X       = numpy.random.randn(2 * d, m)
 
         # Normalize the dictionary and convert back to columns
-        X_norm  = CDL.diagsToColumns(CDL.normalizeDictionary(CDL.columnsToDiags(X)))
+        X_norm  = CDL.diags_to_columns(CDL.normalize_dictionary(CDL.columns_to_diags(X)))
 
         
         # Rescale the normalized dictionary to have some inside, some outside
@@ -200,13 +200,13 @@ def test_proj_l2_ball():
         X_scale = X_norm * R
 
         # Vectorize
-        V_scale = CDL.columnsToVector(X_scale)
+        V_scale = CDL.columns_to_vector(X_scale)
 
         # Project
         V_proj  = CDL.proj_l2_ball(V_scale, m)
 
         # Rearrange the projected matrix into columns
-        X_proj  = CDL.vectorToColumns(V_proj, m)
+        X_proj  = CDL.vector_to_columns(V_proj, m)
 
 
         # Compute norms
@@ -276,7 +276,7 @@ def test_reg_l1_complex():
         X = numpy.random.randn(2 * d, n) * lam / rho
 
         # Compute magnitudes of complex values
-        X_cplx  = CDL.real2ToComplex(X)
+        X_cplx  = CDL.real2_to_complex(X)
         X_abs   = numpy.abs(X_cplx)
 
         # Compute shrinkage on X
@@ -321,7 +321,7 @@ def test_reg_l2_group():
         X = numpy.random.randn(2 * d * m, n) * lam / rho
 
         # Compute the properly shrunk matrix
-        X_cplx  = CDL.real2ToComplex(X)
+        X_cplx  = CDL.real2_to_complex(X)
         S       = (X_cplx.conj() * X_cplx).real
 
         X_norms = numpy.zeros((m, n))
@@ -381,13 +381,13 @@ def test_reg_l1_space():
         X_cols  = X_freq.reshape((h * w * m, n), order='F')
 
         # Split real and complex
-        X       = CDL.complexToReal2(X_cols)
+        X       = CDL.complex_to_real2(X_cols)
 
         # First try without pre-allocation
         Xout    = CDL.reg_l1_space(X, rho, lam, width=w, height=h, nonneg=nonneg)
 
         # Convert back to complex
-        Xout_cplx = CDL.real2ToComplex(Xout)
+        Xout_cplx = CDL.real2_to_complex(Xout)
 
         # reshape back into four dimensions
         Xout_freq = Xout_cplx.reshape((h, w, m, n), order='F')
@@ -403,7 +403,7 @@ def test_reg_l1_space():
         CDL.reg_l1_space(X, rho, lam, width=w, height=h, nonneg=nonneg, Xout=Xout_pre)
 
         # Convert back to complex
-        Xout_cplx_pre = CDL.real2ToComplex(Xout_pre)
+        Xout_cplx_pre = CDL.real2_to_complex(Xout_pre)
 
         # reshape back into four dimensions
         Xout_freq_pre = Xout_cplx_pre.reshape((h, w, m, n), order='F')

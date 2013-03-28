@@ -1,16 +1,18 @@
 #!/usr/bin/env python
-'''
-CREATED:2013-03-01 08:19:26 by Brian McFee <brm2132@columbia.edu>
+"""CREATED:2013-03-01 08:19:26 by Brian McFee <brm2132@columbia.edu>
 
 Convolutional Dictionary Learning
 
-'''
+"""
 
-import numpy
-import scipy.linalg, scipy.sparse, scipy.sparse.linalg
-import scipy.weave
 import functools
 import multiprocessing as mp
+
+import numpy
+import scipy.linalg
+import scipy.sparse
+import scipy.sparse.linalg
+import scipy.weave
 
 #--- magic numbers              ---#
 # NOTE :2013-03-20 12:04:50 by Brian McFee <brm2132@columbia.edu>
@@ -30,8 +32,7 @@ T_CHECKUP   =   5           # number of steps between convergence tests
 #--- Utility functions          ---#
 
 def complex_to_real2(X):
-    '''
-    Separate the real and imaginary components of a matrix
+    """Separate the real and imaginary components of a matrix
 
     See also: real2_to_complex()
 
@@ -40,12 +41,11 @@ def complex_to_real2(X):
 
     Output:
         real 2d-by-n matrix Y = [ real(X) ; imag(X) ]
-    '''
+    """
     return numpy.vstack((X.real, X.imag))
 
 def real2_to_complex(Y):
-    '''
-    Combine the real and imaginary components of a matrix
+    """Combine the real and imaginary components of a matrix
 
     See also: complex_to_real2()
 
@@ -54,7 +54,7 @@ def real2_to_complex(Y):
 
     Output:
         complex d-by-n matrix X
-    '''
+    """
     d = Y.shape[0] / 2
     if Y.ndim > 1:
         return Y[:d, :] + 1.j * Y[d:, :]
@@ -63,11 +63,10 @@ def real2_to_complex(Y):
 
 
 def diags_to_columns(Q):
-    '''
-    Input:  2d-by-2dm sparse matrix Q
+    """Input:  2d-by-2dm sparse matrix Q
     Output: 2d-by-m dense matrix D of diagonals 
             from the upper and lower block of Q
-    '''
+    """
     # Q = [A, -B ; B A]
     # cut to the first half of columns
     # then break vertically
@@ -87,20 +86,19 @@ def diags_to_columns(Q):
     return D
 
 def columns_to_diags(D):
-    '''
-    Input:
+    """Input:
         D:  2d-by-m matrix of real+imaginary vectors
 
     Output:
         Q:  2d-by-2dm sparse diagonal block matrix [A, -B ; B, A]
             where A and B are derived from the real and imaginary components
-    '''
+    """
 
     def __sparse_dblock(matrix):
-        '''
-        Rearrange a d-by-m matrix D into a sparse d-by-dm matrix Q
+        """Rearrange a d-by-m matrix D into a sparse d-by-dm matrix Q
         The i'th d-by-d block of Q = diag(D[:, i])
-        '''
+
+        """
 
         (_d, _m) = matrix.shape
         _A = scipy.sparse.spdiags(matrix.T, range(0, - _d * _m, -_d), _d * _m, _d)
@@ -119,12 +117,11 @@ def columns_to_diags(D):
     return scipy.sparse.bmat([ [ A, -B], [B, A] ], format='csr')
 
 def columns_to_vector(X):
-    '''
-    Input:  X 2d-by-m array
+    """Input:  X 2d-by-m array
     Output: Y 2dm-by-1 array
 
     If X = [A ; B], then Y = [vec(A) ; vec(B)]
-    '''
+    """
 
     (d2, m) = X.shape
 
@@ -135,11 +132,10 @@ def columns_to_vector(X):
     return numpy.vstack( (A, B) ).flatten()
 
 def vector_to_columns(AB, m):
-    '''
-    Input:  AB  2dm-by-1 array
+    """Input:  AB  2dm-by-1 array
             m   number of columns
     Output: X   2d-by-m array
-    '''
+    """
 
     d2m = AB.shape[0]
 
@@ -151,12 +147,11 @@ def vector_to_columns(AB, m):
     return numpy.vstack( (A, B) )
 
 def normalize_dictionary(D):
-    '''
-    Normalize a codebook to have all unit-length bases.
+    """Normalize a codebook to have all unit-length bases.
 
     Input is assumed to be in diagonal-block format.
 
-    '''
+    """
     D = diags_to_columns(D)
     D = D / (numpy.sum(D**2, axis=0) ** 0.5)
     D = columns_to_diags(D)
@@ -167,11 +162,10 @@ def normalize_dictionary(D):
 
 #--- Codebook initialization    ---#
 def init_svd(X, m):
-    '''
-    Initializes a dictionary with the (approximate) left-singular vectors of X
+    """Initializes a dictionary with the (approximate) left-singular vectors of X
 
     X's columns are subsampled to min(n, m**2) when computing svd
-    '''
+    """
     # Draw a subsample
     n           = X.shape[1]
     n_sample    = min(n, m**2)
@@ -182,8 +176,7 @@ def init_svd(X, m):
 
 #--- Regularization functions   ---#
 def reg_l1_real(X, rho, lam, nonneg=False, Xout=None):
-    '''
-    Input:  X:      matrix of reals
+    """Input:  X:      matrix of reals
             rho:    augmented lagrangian scaling parameter
             lam:    weight on the regularization term
             nonneg: flag to indicate non-negative l1
@@ -194,7 +187,7 @@ def reg_l1_real(X, rho, lam, nonneg=False, Xout=None):
     Note:
             This routine exists for use within reg_l1_time and reg_l1_space.
             Not to be used directly.
-    '''
+    """
 
     if Xout is None:
         # order=A to preserve indexing order of X
@@ -228,8 +221,7 @@ def reg_l1_space(A, rho, lam,   width=None,
                                 nonneg=False, 
                                 fft_pad=False, 
                                 Xout=None):
-    '''
-        Spatial L1 sparsity: assumes each column of X is a columns_to_vectord 2d-DFT of a 2d-signal
+    """Spatial L1 sparsity: assumes each column of X is a columns_to_vectord 2d-DFT of a 2d-signal
 
         Input: 
                 A   = 2*d*m-by-n
@@ -238,7 +230,7 @@ def reg_l1_space(A, rho, lam,   width=None,
                 w, h: d = w * h
                 Xout:   destination (must be same shape as A)
 
-    '''
+    """
 
     if fft_pad:
         # If we have a padded FFT, then width and height should double
@@ -277,8 +269,7 @@ def reg_l1_space(A, rho, lam,   width=None,
     return Xout
 
 def reg_l1_complex(X, rho, lam, Xout=None):
-    '''
-    Input:  
+    """Input:  
         X:      2*d*m-by-n      matrix of codeword activations
         rho:    augmented lagrangian scaling parameter
         lam:    weight on the regularization term
@@ -290,7 +281,7 @@ def reg_l1_complex(X, rho, lam, Xout=None):
     Note:
         This function applies shrinkage toward the disk in the complex plane.
         For the standard l1 shrinkage operator, see reg_l1_real.
-    '''
+    """
 
     (d2m, n)    = X.shape
 
@@ -326,8 +317,7 @@ def reg_l1_complex(X, rho, lam, Xout=None):
 
 
 def reg_l2_group(X, rho, lam, m, Xout=None):
-    '''
-    Input:  X:      2*d*m-by-n      matrix of codeword activations
+    """Input:  X:      2*d*m-by-n      matrix of codeword activations
             rho:    augmented lagrangian scaling parameter
             lam:    weight on the regularization term
             m:      number of codewords (defines group size)
@@ -335,7 +325,7 @@ def reg_l2_group(X, rho, lam, m, Xout=None):
 
     Output:
             (lam/rho)*Group-l2 shrunken version of X
-    '''
+    """
 
     (d2m, n)    = X.shape
     dm          = d2m / 2
@@ -411,8 +401,7 @@ def reg_l2_group(X, rho, lam, m, Xout=None):
 
 
 def reg_lowpass(A, rho, lam, width=None, height=None, Xout=None):
-    '''
-        Sobel regularization: assumes each column of X is vectorized 2d-DFT
+    """Sobel regularization: assumes each column of X is vectorized 2d-DFT
 
         Input: 
             A   = 2*d*m-by-n
@@ -421,7 +410,7 @@ def reg_lowpass(A, rho, lam, width=None, height=None, Xout=None):
             w, h: d = w * h
             Xout:   destination (must be same shape as A)
 
-    '''
+    """
 
     d2m     = A.shape[0]
     d       = width * height
@@ -443,14 +432,13 @@ def reg_lowpass(A, rho, lam, width=None, height=None, Xout=None):
     return Xout
 
 def proj_l2_ball(X, m):
-    '''
-        Input:  
+    """Input:  
             X 2*d*m-by-1 vector  (ndarray) of real and imaginary codewords
             m >0    number of codewords
 
         Output: 
             X where each codeword is projected onto the unit l2 ball
-    '''
+    """
     d2m     = X.shape[0]
     d       = d2m / (2 * m)
 
@@ -475,8 +463,7 @@ def proj_l2_ball(X, m):
 
 #--- Encoder                    ---#
 def __encoder(X, D, reg, max_iter=1000, output_diagnostics=True):
-    '''
-    Encoder
+    """Encoder
 
     Input:
         X:          2d-by-n     data
@@ -490,7 +477,7 @@ def __encoder(X, D, reg, max_iter=1000, output_diagnostics=True):
 
     Output:
         A:          2dm-by-n    encoding matrix
-    '''
+    """
 
     (d, dm) = D.shape
     m       = dm / d
@@ -512,8 +499,7 @@ def __encoder(X, D, reg, max_iter=1000, output_diagnostics=True):
 
     #--- Regression function        ---#
     def __ridge(_D, _b, _Z):
-        '''
-        Specialized ridge regression solver for Hadamard products.
+        """Specialized ridge regression solver for Hadamard products.
     
         Not for external use.
     
@@ -524,7 +510,7 @@ def __encoder(X, D, reg, max_iter=1000, output_diagnostics=True):
 
         Output:
             X = 1/rho  *  (I - 1/rho * A' * Z * A) * b
-        '''
+        """
     
         return (_b - (_D.T * (_Z * (_D * _b)) / rho)) / rho
     #---                            ---#
@@ -609,10 +595,7 @@ def __encoder(X, D, reg, max_iter=1000, output_diagnostics=True):
 def parallel_encoder(X, D, reg, n_threads=4, 
                                 max_iter=1000, 
                                 output_diagnostics=False):
-    #     TODO:   2013-03-27 12:11:27 by Brian McFee <brm2132@columbia.edu>
-    # write a docstring 
-    '''
-    Parallel encoder
+    """Parallel encoder
 
     Input:
         X:          2d-by-n     data
@@ -628,7 +611,7 @@ def parallel_encoder(X, D, reg, n_threads=4,
     Output:
         A:          2dm-by-n    encoding matrix
 
-    '''
+    """
     n   = X.shape[1]
     dm  = D.shape[1]
 
@@ -693,11 +676,10 @@ def parallel_encoder(X, D, reg, n_threads=4,
 
 #--- Dictionary                 ---#
 def encoding_statistics(A, X):
-    '''
-    Compute the empirical average of encoding statistics:
+    """Compute the empirical average of encoding statistics:
         StS <- 1/n sum_i A[i]' A[i]
         StX <- 1/n sum_i A[i]' X[i]
-    '''
+    """
 
     n = A.shape[1]
     m = A.shape[0] / X.shape[0]
@@ -825,8 +807,7 @@ def learn_dictionary(X, m,  reg='l2_group',
                             n_threads=1, 
                             batch_size=None, 
                             **kwargs):
-    '''
-    Alternating minimization to learn convolutional dictionary
+    """Alternating minimization to learn convolutional dictionary
 
     Input:
         X:              2d-by-n     data matrix, real/imaginary-separated
@@ -859,7 +840,7 @@ def learn_dictionary(X, m,  reg='l2_group',
                         e.g.,   A2 = encoder(X2)
         diagnostics:            is a report of the learning algorithm
 
-    '''
+    """
 
     n = X.shape[1]
 
