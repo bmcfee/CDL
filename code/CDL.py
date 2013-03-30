@@ -1,8 +1,7 @@
 #!/usr/bin/env python
-"""CREATED:2013-03-01 08:19:26 by Brian McFee <brm2132@columbia.edu>
+"""Convolutional Dictionary Learning
 
-Convolutional Dictionary Learning
-
+CREATED:2013-03-01 08:19:26 by Brian McFee <brm2132@columbia.edu>
 """
 
 import functools
@@ -36,11 +35,12 @@ def complex_to_real2(X):
 
     See also: real2_to_complex()
 
-    Input:
-        complex d-by-n matrix X
+    Arguments:
+        X       -- (ndarray)    complex d-by-n matrix
 
-    Output:
-        real 2d-by-n matrix Y = [ real(X) ; imag(X) ]
+    Returns Y:
+        Y       -- (ndarray)    Y = [real(X) ; imag(X)]
+
     """
     return numpy.vstack((X.real, X.imag))
 
@@ -49,11 +49,12 @@ def real2_to_complex(Y):
 
     See also: complex_to_real2()
 
-    Input:
-        real 2d-by-n matrix Y = [ real(X) ; imag(X) ]
+    Arguments:
+        Y       --  (ndarray)   real 2d-by-n from complex_to_real2()
 
-    Output:
-        complex d-by-n matrix X
+    Returns X:
+        X       --  (ndarray)   complex d-by-n
+
     """
     d = Y.shape[0] / 2
     if Y.ndim > 1:
@@ -63,9 +64,17 @@ def real2_to_complex(Y):
 
 
 def diags_to_columns(Q):
-    """Input:  2d-by-2dm sparse matrix Q
-    Output: 2d-by-m dense matrix D of diagonals 
-            from the upper and lower block of Q
+    """Convert a sparse, diagonal block matrix into a dense column matrix
+    
+    See also: columns_to_diags()
+
+    Arguments:  
+        Q       -- (scipy.sparse)   2d-by-2dm with nonzeros along diagonals
+
+    Returns: 
+        D       -- (ndarray)        2d-by-m dense matrix D of diagonals 
+                                    from the upper and lower block of Q
+
     """
     # Q = [A, -B ; B A]
     # cut to the first half of columns
@@ -86,41 +95,59 @@ def diags_to_columns(Q):
     return D
 
 def columns_to_diags(D):
-    """Input:
-        D:  2d-by-m matrix of real+imaginary vectors
+    """Convert a dense column matrix into a sparse, diagonal-block matrix.
+    
+    See also: diags_to_columns()
 
-    Output:
-        Q:  2d-by-2dm sparse diagonal block matrix [A, -B ; B, A]
-            where A and B are derived from the real and imaginary components
+    Arguments:
+        D   -- (ndarray)        2d-by-m matrix of real+imaginary vectors
+
+    Returns:
+        Q   -- (scipy.sparse)   2d-by-2dm sparse diagonal block matrix 
+                                Q = [A, -B ; B, A]
+                                where A and B are derived from the real and 
+                                imaginary components (top and bottom halves)
+                                of D.
+
     """
 
-    def __sparse_dblock(matrix):
+    def _sparse_dblock(matrix):
         """Rearrange a d-by-m matrix D into a sparse d-by-dm matrix Q
         The i'th d-by-d block of Q = diag(D[:, i])
 
         """
 
-        (_d, _m) = matrix.shape
-        _A = scipy.sparse.spdiags(matrix.T, range(0, - _d * _m, -_d), _d * _m, _d)
-        return _A.T
+        return scipy.sparse.spdiags(matrix.T, 
+                                    range(0, - matrix.size, - matrix.shape[0]), 
+                                    matrix.size, matrix.shape[0]).T
 
     # Get the size of each codeword
     d = D.shape[0] / 2
 
     # Block the real component
-    A = __sparse_dblock(D[:d, :])
+    A = _sparse_dblock(D[:d, :])
 
     # Block the imaginary component
-    B = __sparse_dblock(D[d:, :])
+    B = _sparse_dblock(D[d:, :])
 
     # Block up everything in csr format
     return scipy.sparse.bmat([ [ A, -B], [B, A] ], format='csr')
 
 def columns_to_vector(X):
-    """Input:  X 2d-by-m array
-    Output: Y 2dm-by-1 array
+    """Vectorize a stacked, real+imag matrix.
+    
+    See also: vector_to_columns()
 
-    If X = [A ; B], then Y = [vec(A) ; vec(B)]
+    Arguments:  
+        X   --  (ndarray)   2d-by-m matrix of stacked real+imag columns
+                            
+
+    Returns: 
+        Y   --  (ndarray)   2dm-by-1 vector
+                            If  X = [A ; B], then 
+                                Y = [vec(A) ; vec(B)]
+
+    Note: this stacking places all imaginary parts below all real parts.
     """
 
     (d2, m) = X.shape
@@ -132,9 +159,18 @@ def columns_to_vector(X):
     return numpy.vstack( (A, B) ).flatten()
 
 def vector_to_columns(AB, m):
-    """Input:  AB  2dm-by-1 array
-            m   number of columns
-    Output: X   2d-by-m array
+    """Unstack a column vector into a real+imag matrix
+    
+    See also: columns_to_vector()
+
+    Arguments:  
+        AB      --  (ndarray)   2dm-by-1 stacked column vector
+        m       --  (int>0)     number of columns to produce
+
+    Returns: 
+        X       --  (ndarray)   2d-by-m array where each column
+                                is stacked real+imag components
+
     """
 
     d2m = AB.shape[0]
@@ -147,9 +183,14 @@ def vector_to_columns(AB, m):
     return numpy.vstack( (A, B) )
 
 def normalize_dictionary(D):
-    """Normalize a codebook to have all unit-length bases.
+    """Normalize a dictionary to have all unit-length bases.
 
-    Input is assumed to be in diagonal-block format.
+    Arguments:
+        D       -- (sparse) 2d-by-2dm diagonal-block dictionary
+                            See: columns_to_diags()
+
+    Returns:
+        Dhat    -- (sparse) D with each codeword normalized to unit length
 
     """
     D = diags_to_columns(D)
@@ -162,9 +203,17 @@ def normalize_dictionary(D):
 
 #--- Codebook initialization    ---#
 def init_svd(X, m):
-    """Initializes a dictionary with the (approximate) left-singular vectors of X
+    """Initializes a dictionary with (approximate) left-singular vectors
 
-    X's columns are subsampled to min(n, m**2) when computing svd
+    Arguments:
+        X   --  (ndarray)   2d-by-n data array
+        m   --  (int>0)     number of basis elements to initialize
+
+    Returns:
+        D   --  (sparse)    2d-by-2dm normalized dictionary
+
+    Note: the SVD is computed from a subsample of max(n, m**2) columns from X
+
     """
     # Draw a subsample
     n           = X.shape[1]
@@ -176,17 +225,20 @@ def init_svd(X, m):
 
 #--- Regularization functions   ---#
 def reg_l1_real(X, rho, lam, nonneg=False, Xout=None):
-    """Input:  X:      matrix of reals
-            rho:    augmented lagrangian scaling parameter
-            lam:    weight on the regularization term
-            nonneg: flag to indicate non-negative l1
-            Xout:   destination for the shrunken value
+    """l1 regularization
+    
+    Arguments:  
+      X         --  (ndarray)   array of reals
+      rho       --  (float>0)   augmented lagrangian scaling parameter
+      lam       --  (float>0)   weight on the regularization term
+      nonneg    --  (boolean)   force non-negativity            |default: False
+      Xout      --  (ndarray)   (optional)  destination for the shrunken value
 
-    Output:
-            Xout = shrinkage(X, lam / rho)
-    Note:
-            This routine exists for use within reg_l1_time and reg_l1_space.
-            Not to be used directly.
+    Returns:
+      Xout      --  (ndarray)   shrinkage(X, lam / rho)
+
+    Note: This routine exists for use within reg_l1_time and reg_l1_space.
+          Not to be used directly.
     """
 
     if Xout is None:
@@ -221,14 +273,25 @@ def reg_l1_space(A, rho, lam,   width=None,
                                 nonneg=False, 
                                 fft_pad=False, 
                                 Xout=None):
-    """Spatial L1 sparsity: assumes each column of X is a columns_to_vectord 2d-DFT of a 2d-signal
+    """Spatial L1 sparsity: 
+        - inverse 2d-DFT to A
+        - l1 shrinkage
+        - 2d-DFT back
+    
+    Each column of A is a columns_to_vector'd 2d-DFT of an activation matrix
 
-        Input: 
-                A   = 2*d*m-by-n
-                rho > 0
-                lam > 0
-                w, h: d = w * h
-                Xout:   destination (must be same shape as A)
+    Arguments: 
+      A         --  (ndarray)   2dm-by-n matrix of codeword activations
+      rho       --  (float>0)   augmented lagrangian scaling parameter
+      lam       --  (float>0)   weight on the regularization term
+      width     --  (int)       d = width * height specifies the patch shape
+      height    --  (int)       
+      nonneg    --  (boolean)   force non-negativity        |default: False
+      fft_pad   --  (boolean)   is the input padded         |default: False
+      Xout      --  (ndarray)   (optional) output destination
+
+    Returns:
+      Xout      --  (ndarray)   fft2(shrinkage(ifft2(A), lam/rho))
 
     """
 
@@ -254,7 +317,9 @@ def reg_l1_space(A, rho, lam,   width=None,
     # FIXME:  2013-03-11 12:19:56 by Brian McFee <brm2132@columbia.edu>
     # this is some brutal hackery, but weave doesn't like 4-d arrays 
     Aspace = Aspace.flatten(order='F')
+
     reg_l1_real(Aspace, rho, lam, nonneg, Aspace)
+    
     Aspace = Aspace.reshape((height, width, m, n), order='F')
 
     if fft_pad:
@@ -264,19 +329,21 @@ def reg_l1_space(A, rho, lam,   width=None,
     # Transform back, reshape, and separate real from imaginary
     Xout[:] = complex_to_real2(numpy.reshape(numpy.fft.fft2(Aspace, 
                                                           axes=(0, 1)), 
-                                           (height * width * m, n), 
-                                           order='F'))[:]
+                                             (height * width * m, n), 
+                                             order='F'))[:]
     return Xout
 
 def reg_l1_complex(X, rho, lam, Xout=None):
-    """Input:  
-        X:      2*d*m-by-n      matrix of codeword activations
-        rho:    augmented lagrangian scaling parameter
-        lam:    weight on the regularization term
-        Xout:   destination for the shrunken value
+    """Complex l1 regularization
 
-    Output:
-        (lam/rho)*Group-l2 shrunken version of X
+    Arguments:  
+      X     --  (ndarray) 2*d*m-by-n matrix of codeword activations
+      rho   --  (float>0) augmented lagrangian scaling parameter
+      lam   --  (float>0) weight on the regularization term
+      Xout  --  (ndarray) optional destination for the shrunken value
+
+    Returns:
+      Xout  --  (ndarray)   (lam/rho)*Group-l2 shrunken version of X
 
     Note:
         This function applies shrinkage toward the disk in the complex plane.
@@ -317,14 +384,18 @@ def reg_l1_complex(X, rho, lam, Xout=None):
 
 
 def reg_l2_group(X, rho, lam, m, Xout=None):
-    """Input:  X:      2*d*m-by-n      matrix of codeword activations
-            rho:    augmented lagrangian scaling parameter
-            lam:    weight on the regularization term
-            m:      number of codewords (defines group size)
-            Xout:   destination for the shrunken value
+    """Group-l2 regularization
 
-    Output:
-            (lam/rho)*Group-l2 shrunken version of X
+    Arguments:  
+      X     -- (ndarray) 2*d*m-by-n  matrix of codeword activations
+      rho   -- (float>0) augmented lagrangian scaling parameter
+      lam   -- (float>0) weight on the regularization term
+      m     -- (int>0)   number of codewords (defines group size)
+      Xout  -- (ndarray) optional destination for the shrunken value
+
+    Returns:
+      Xout  -- (ndarray) (lam/rho)*Group-l2 shrunken version of X
+
     """
 
     (d2m, n)    = X.shape
@@ -401,14 +472,18 @@ def reg_l2_group(X, rho, lam, m, Xout=None):
 
 
 def reg_lowpass(A, rho, lam, width=None, height=None, Xout=None):
-    """Sobel regularization: assumes each column of X is vectorized 2d-DFT
+    """Lowpass regularization: penalizes square of first-derivative
+    
+    Arguments:
+      A         --  (ndarray) 2*d*m-by-n activation matrix
+      rho       --  (float>0) augmented lagrangian scaling parameter
+      lam       --  (float>0) weight on the regularization term
+      width     --  (int>0)   d = w * h specifies the patch shape
+      height    --  (int>0)
+      Xout      --  (ndarray) optional output destination
 
-        Input: 
-            A   = 2*d*m-by-n
-            rho > 0
-            lam > 0
-            w, h: d = w * h
-            Xout:   destination (must be same shape as A)
+    Returns:
+      Xout      --  smoothed version of A
 
     """
 
@@ -432,12 +507,15 @@ def reg_lowpass(A, rho, lam, width=None, height=None, Xout=None):
     return Xout
 
 def proj_l2_ball(X, m):
-    """Input:  
-            X 2*d*m-by-1 vector  (ndarray) of real and imaginary codewords
-            m >0    number of codewords
+    """Project a vectorized matrix onto the unit l2 ball
+    
+    Arguments:  
+      X     -- (ndarray)  2*d*m-by-1 vector of real+imaginary codewords
+      m     -- (int>0)    number of codewords
 
-        Output: 
-            X where each codeword is projected onto the unit l2 ball
+    Output:
+      Xhat  -- (ndarray)  Each sub-vector of X is projected onto the unit l2 ball
+
     """
     d2m     = X.shape[0]
     d       = d2m / (2 * m)
@@ -462,21 +540,21 @@ def proj_l2_ball(X, m):
 
 
 #--- Encoder                    ---#
-def __encoder(X, D, reg, max_iter=1000, output_diagnostics=True):
-    """Encoder
+def _encoder(X, D, reg, max_iter=200, output_diagnostics=True):
+    """Encoder (single-threaded).  For internal use only.
 
-    Input:
-        X:          2d-by-n     data
-        D:          2d-by-2dm   codebook
-        reg:        regularization function.
+    Arguments:
+      X         --  (ndarray)   2d-by-n     data matrix
+      D         --  (sparse)    2d-by-2dm   dictionary
+      reg       --  (function)  regularization function, e.g.,
 
-                    Example:
                     reg = functools.partial(CDL.reg_l2_group, lam=0.5, m=num_codewords)
 
-        max_iter:   # of iterations to run the encoder  (Default: 30)
+      max_iter  --  (int>0)     maximum number of steps     |default: 200
 
-    Output:
-        A:          2dm-by-n    encoding matrix
+    Returns:
+        A       --  (ndarray)   2dm-by-n activation matrix
+                                where X ~= DA
     """
 
     (d, dm) = D.shape
@@ -498,18 +576,19 @@ def __encoder(X, D, reg, max_iter=1000, output_diagnostics=True):
     Dinv    = scipy.sparse.spdiags( (1.0 + Dnorm / rho)**-1, 0, d, d)
 
     #--- Regression function        ---#
-    def __ridge(_D, _b, _Z):
+    def _ridge(_D, _b, _Z):
         """Specialized ridge regression solver for Hadamard products.
     
         Not for external use.
     
-        Input:
-            A:      2d-by-2dm
-            b:      2dm
-            Z:      2d > 0,  == diag(inv(I + 1/rho * A * A.T))
+        Arguments:
+          _D    -- (sparse)     2d-by-2dm
+          _b    -- (ndarray)    2dm
+          _Z    -- (ndarray)    2d > 0,  == diag(inv(I + 1/rho * A * A.T))
 
-        Output:
-            X = 1/rho  *  (I - 1/rho * A' * Z * A) * b
+        Returns:
+            X   -- (ndarray)    1/rho  *  (I - 1/rho * A' * Z * A) * b
+
         """
     
         return (_b - (_D.T * (_Z * (_D * _b)) / rho)) / rho
@@ -529,7 +608,7 @@ def __encoder(X, D, reg, max_iter=1000, output_diagnostics=True):
     t = 0
     for t in xrange(max_iter):
         # Encode all the data
-        A       = __ridge(D, DX + rho * (Z - O), Dinv)
+        A       = _ridge(D, DX + rho * (Z - O), Dinv)
 
         # Apply the regularizer
         Zold    = Z.copy()
@@ -558,26 +637,25 @@ def __encoder(X, D, reg, max_iter=1000, output_diagnostics=True):
         _DIAG['eps_dual'    ].append(eps_dual)
         _DIAG['rho'         ].append(rho)
         
-        
         if ERR_primal < eps_primal and ERR_dual <= eps_dual:
             _DIAG['converged']  = True
             break
 
-
-        rho_changed = False
-
         if ERR_primal > MU * ERR_dual and rho * TAU < RHO_MAX:
+            # Too much weight on primal, upscale dual
             rho         = rho   * TAU
             O           = O     / TAU
-            rho_changed = True
         elif ERR_dual > MU * ERR_primal and rho / TAU > RHO_MIN:
+            # Too much weight on dual, upscale primal
             rho         = rho   / TAU
             O           = O     * TAU
-            rho_changed = True
+        else:
+            # Primal and dual are balanced, no need to rescale
+            continue
 
         # Update Dinv
-        if rho_changed:
-            Dinv = scipy.sparse.spdiags( (1.0 + Dnorm / rho)**-1.0, 0, d, d)
+        Dinv = scipy.sparse.spdiags( (1.0 + Dnorm / rho)**-1.0, 0, d, d)
+
 
     # Append to diagnostics
     _DIAG['err_primal' ]    = numpy.array(_DIAG['err_primal'])
@@ -592,24 +670,24 @@ def __encoder(X, D, reg, max_iter=1000, output_diagnostics=True):
     else:
         return Z
 
+
 def parallel_encoder(X, D, reg, n_threads=4, 
-                                max_iter=1000, 
+                                max_iter=200, 
                                 output_diagnostics=False):
     """Parallel encoder
 
-    Input:
-        X:          2d-by-n     data
-        D:          2d-by-2dm   codebook
-        reg:        regularization function.
-
-                    Example:
+    Arguments:
+      X         -- (ndarray)    2d-by-n data to be encoded
+      D         -- (sparse)     2d-by-2dm dictionary
+      reg       -- (function)   regularization function, eg:
+                    
                     reg = functools.partial(CDL.reg_l2_group, lam=0.5, m=num_codewords)
 
-        n_threads:  number of encoders to run in parallel           | default: 4
-        max_iter:   # of iterations to run the encoder              | default: 1000
+      n_threads -- (int>0)      number of parallel threads      | default: 4
+      max_iter  -- (int>0)      maximum number of steps         | default: 200
 
-    Output:
-        A:          2dm-by-n    encoding matrix
+    Returns:
+        A       -- (ndarray)    2dm-by-n activation matrix,  X ~= D*A
 
     """
     n   = X.shape[1]
@@ -618,29 +696,31 @@ def parallel_encoder(X, D, reg, n_threads=4,
     # Punt to the local encoder if we're single-threaded or don't have enough 
     # data to distrubute
     if n_threads == 1 or n < n_threads:
-        return __encoder(X, D, reg, 
+        return _encoder(X, D, reg, 
                          max_iter=max_iter, 
                          output_diagnostics=output_diagnostics)
 
     A   = numpy.empty( (dm, n), order='F')
 
-    def __consumer(input_queue, output_queue):
+    def _consumer(input_queue, output_queue):
         while True:
             try:
                 (i, j) = input_queue.get(True, 1)
 
                 if output_diagnostics:
-                    (a_ij, diags)   = __encoder(X[:, i:j], D, reg, 
-                                                max_iter=max_iter, 
-                                                output_diagnostics=output_diagnostics)
+                    (a_ij, diag)   = _encoder(X[:, i:j], D, reg, 
+                                               max_iter=max_iter, 
+                                               output_diagnostics=True)
                 else:
-                    a_ij            = __encoder(X[:, i:j], D, reg, 
-                                                max_iter=max_iter, 
-                                                output_diagnostics=output_diagnostics)
-                    diags           = None
+                    a_ij = _encoder(X[:, i:j], D, reg, 
+                                    max_iter=max_iter, 
+                                    output_diagnostics=False)
+                    diag = None
 
-                output_queue.put( (i, j, a_ij, diags) )
+                output_queue.put((i, j, a_ij, diag))
 
+            # FIXME:  2013-03-30 10:13:07 by Brian McFee <brm2132@columbia.edu>
+            #  bare exception
             except:
                 break
 
@@ -659,7 +739,7 @@ def parallel_encoder(X, D, reg, n_threads=4,
 
     # Launch encoders
     for i in range(n_threads):
-        mp.Process(target=__consumer, args=(input_queue, output_queue)).start()
+        mp.Process(target=_consumer, args=(input_queue, output_queue)).start()
 
     diagnostics = []
     while num_Q > 0:
@@ -675,10 +755,22 @@ def parallel_encoder(X, D, reg, n_threads=4,
 #---                            ---#
 
 #--- Dictionary                 ---#
-def encoding_statistics(A, X):
-    """Compute the empirical average of encoding statistics:
-        StS <- 1/n sum_i A[i]' A[i]
-        StX <- 1/n sum_i A[i]' X[i]
+def _encoding_statistics(A, X):
+    """Compute the empirical average of encoding statistics.
+
+    This function is only used by the dictionary learning algorithm.
+
+    It has been factored out of dictionary() to facilitate online
+    mini-batch learning.
+
+    Arguments:
+      A     -- (ndarray)    2dm-by-n    activation matrix
+      X     -- (ndarray)    2d-by-n     data matrix
+
+    Returns (StS, StX):
+      StS   -- (sparse)     1/n sum_i A[:,i].T * A[:,i]  in diagonal-block form
+      StX   -- (ndarray)    1/n sum_i A[:,i].T * X[:,i]  in dense form
+
     """
 
     n = A.shape[1]
@@ -697,15 +789,29 @@ def encoding_statistics(A, X):
     return (StS / n, StX / n)
 
 
-def dictionary(StS, StX, m, max_iter=1000, Dinitial=None):
+def dictionary(StS, StX, m, max_iter=200, Dinitial=None):
+    """Learn a dictionary from encoding statistics.
 
+    Arguments:
+      StS       --  (sparse)    matrix of activation cross-interactions
+      StX       --  (ndarray)   matrix is activation-data interactions
+
+      m         --  (int>0)     size of the dictionary
+      max_iter  --  (int>0)     maximum number of steps         | default: 200
+      Dinitial  --  (ndarray)   2dm-by-1 initial dictionary     | default: None
+    
+    Returns D:
+      D         --  (sparse)    2d-by-2dm diagonal-block dictionary
+
+    Note: StS and StX are produced by _encoding_statistics()
+    """
     d2m     = StX.shape[0]
 
     # Initialize ADMM variables
     rho     = RHO_INIT_D
 
-    D       = numpy.zeros( d2m, order='F' )         # Unconstrained codebook
-    E       = numpy.zeros_like(D, order='A')        # l2-constrained codebook
+    D       = numpy.zeros( d2m, order='F' )         # Unconstrained dictionary
+    E       = numpy.zeros_like(D, order='A')        # l2-constrained dictionary
     W       = numpy.zeros_like(E, order='A')        # Scaled dual variables
 
     if Dinitial is not None:
@@ -730,7 +836,7 @@ def dictionary(StS, StX, m, max_iter=1000, Dinitial=None):
 
     t = 0
     for t in xrange(max_iter):
-        # Solve for the unconstrained codebook
+        # Solve for the unconstrained dictionary
         D       = SOLVER( StX + rho * (E - W) )
 
         # Project each basis element onto the l2 ball
@@ -764,18 +870,21 @@ def dictionary(StS, StX, m, max_iter=1000, Dinitial=None):
             _DIAG['converged'] = True
             break
 
-        rho_changed = False
         if ERR_primal > MU * ERR_dual and rho * TAU < RHO_MAX:
+            # Too much weight on primal, upscale dual
             rho = rho   * TAU
             W   = W     / TAU
-            rho_changed = True
         elif ERR_dual > MU * ERR_primal and rho / TAU > RHO_MIN:
+            # Too much weight on dual, upscale primal
             rho = rho   / TAU
             W   = W     * TAU
-            rho_changed = True
+        else:
+            # Primal and dual are balanced, no need to rescale
+            continue
 
-        if rho_changed:
-            SOLVER = scipy.sparse.linalg.factorized(StS + rho * ident)
+        # Update the solver with the new rho value
+        SOLVER = scipy.sparse.linalg.factorized(StS + rho * ident)
+
 
     # Numpyfy the diagnostics
     _DIAG['err_primal' ]    = numpy.array(_DIAG['err_primal'])
@@ -790,7 +899,20 @@ def dictionary(StS, StX, m, max_iter=1000, Dinitial=None):
 
 #--- Alternating minimization   ---#
 def batch_generator(X, batch_size, max_steps):
+    """Mini-batch generator
 
+    Arguments:
+      X             --  (ndarray)   2d-by-n data matrix
+      batch_size    --  (int>0)     number of points per btach
+      max_steps     --  (int>0)     maximum number of batches to yield
+
+    Yields:
+      Xbatch        --  (ndarray)   2d-by-batch_size random column sample of X
+
+    Note: if batch_size == n, then Xbatch = X is always yielded
+
+    Note: per-batch sampling is done with replacement
+    """
     n = X.shape[1]
 
     for _ in xrange(max_steps):
@@ -800,45 +922,50 @@ def batch_generator(X, batch_size, max_steps):
         else:
             yield X[:, numpy.random.randint(0, n, batch_size)]
 
-def learn_dictionary(X, m,  reg='l2_group', 
-                            lam=1e0, 
+
+def learn_dictionary(X, m,  reg='l1_space', 
+                            lam=1e-1, 
                             max_steps=20, 
-                            max_admm_steps=1000, 
+                            max_admm_steps=200, 
                             n_threads=1, 
-                            batch_size=None, 
+                            batch_size=64, 
                             **kwargs):
-    """Alternating minimization to learn convolutional dictionary
+    """Alternating minimization to learn a convolutional dictionary
 
-    Input:
-        X:              2d-by-n     data matrix, real/imaginary-separated
-        m:              number of filters to learn
-        reg:            regularizer for activations. One of the following:
+    Arguments:
+      X             -- (ndarray) 2d-by-n.  Each column is the fourier transform
+                                           of an example point, and the 
+                                           real//imaginary components have been
+                                           separated by complex_to_real2().
 
-                l2_group        l2 norm per activation map (Default)
-                l1              l1 norm per (complex) activation map
-                l1_space        l1 of spatial activations (2d activations)
+      m             -- (int>0)  number of filters to learn
+      reg           -- (string) regularizer for activations. One of the following:
 
-        max_steps:      number of outer-loop steps
-        max_admm_steps: number of inner loop steps
-        n_threads:      number of parallel encoders                 | default: 1
-        batch_size:     number of data points to encode per step    | default: n
+        'l1_space'  --  l1 of (2-dimensional) activations       | default
+        'l1'        --  l1 norm per (complex) activation map
+        'l2_group'  --  l2 norm per activation map 
 
-        kwargs:         Additional keyword arguments to regularizers
+      max_steps     -- (int>0)  number of alternating minimization steps
+      max_admm_steps-- (int>0)  number of steps for the internal optimizer
+      n_threads     -- (int>0)  number of encoder threads       | default: 1
+      batch_size    -- (int>0)  number of points per step       | default: 64
+                                specify None to use all of X
 
-                l1_space:
-                    width:      width of the activation patch
-                    height:     width of the activation patch
+      **kwargs      --  Additional keyword arguments to regularizers:
 
-    Output:
-        (D, A, encoder, diagnostics) 
+        For l1_space:
+            width   -- (int>0)    patch width
+            height  -- (int>0)    patch height: d = width * height
+            fft_pad -- (boolean)  are the patches zero-padded?  | default: False
+
+    Returns (encode, D, diagnostics):
         
-        where 
+      encode        -- (function) the learned encoder function. 
+                                  To encode new data, say:
+                                    A_test = encode(X_test)
 
-        D:          2d-by-m     is the learned dictionary
-        A:          2dm-by-n    is the set of activations for X
-        encoder:                is the learned encoder function
-                        e.g.,   A2 = encoder(X2)
-        diagnostics:            is a report of the learning algorithm
+      D             -- (ndarray)  2d-by-m  the learned dictionary (dense form)
+      diagnostics   -- (dict)     report of the learning algorithm
 
     """
 
@@ -912,7 +1039,7 @@ def learn_dictionary(X, m,  reg='l2_group',
     error   = []
 
     ###
-    # Initialize the codebook
+    # Initialize the dictionary
     D = init_svd(X, m)
     
     for (T, X_batch) in enumerate(batch_generator(X, batch_size, max_steps), 1):
@@ -928,7 +1055,7 @@ def learn_dictionary(X, m,  reg='l2_group',
 
         #   TODO:   2013-03-19 12:56:47 by Brian McFee <brm2132@columbia.edu>
         #   parallelize encoding statistics
-        (StS_new, StX_new)  = encoding_statistics(A, X_batch)
+        (StS_new, StX_new)  = _encoding_statistics(A, X_batch)
 
         alpha = (1.0 - 1.0/T)**beta
 
@@ -942,7 +1069,7 @@ def learn_dictionary(X, m,  reg='l2_group',
             StX     = alpha * StX     + (1.0-alpha) * StX_new
 
         ###
-        # Optimize the codebook
+        # Optimize the dictionary
         (D, D_diags)  = dictionary(StS, StX, m, 
                                    max_iter=max_admm_steps, 
                                    Dinitial=D)
