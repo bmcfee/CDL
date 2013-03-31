@@ -703,28 +703,24 @@ def parallel_encoder(X, D, reg, n_threads=4,
     A   = numpy.empty( (dm, n), order='F')
 
     def _consumer(input_queue, output_queue):
-        while True:
-            try:
-                (i, j) = input_queue.get(True, 1)
+        while not input_queue.empty():
+            (i, j) = input_queue.get(True, 1)
 
-                if output_diagnostics:
-                    (a_ij, diag)   = _encoder(X[:, i:j], D, reg, 
-                                               max_iter=max_iter, 
-                                               output_diagnostics=True)
-                else:
-                    a_ij = _encoder(X[:, i:j], D, reg, 
-                                    max_iter=max_iter, 
-                                    output_diagnostics=False)
-                    diag = None
+            if output_diagnostics:
+                (a_ij, diag)   = _encoder(X[:, i:j], D, reg, 
+                                            max_iter=max_iter, 
+                                            output_diagnostics=True)
+            else:
+                a_ij = _encoder(X[:, i:j], D, reg, 
+                                max_iter=max_iter, 
+                                output_diagnostics=False)
+                diag = None
 
-                output_queue.put((i, j, a_ij, diag))
-
-            # FIXME:  2013-03-30 10:13:07 by Brian McFee <brm2132@columbia.edu>
-            #  bare exception
-            except:
-                break
+            output_queue.put((i, j, a_ij, diag))
 
         output_queue.close()
+        output_queue.join_thread()
+
 
     input_queue    = mp.Queue()
     output_queue   = mp.Queue()
@@ -740,6 +736,9 @@ def parallel_encoder(X, D, reg, n_threads=4,
     # Launch encoders
     for i in range(n_threads):
         mp.Process(target=_consumer, args=(input_queue, output_queue)).start()
+
+    # We're done writing
+    input_queue.close()
 
     diagnostics = []
     while num_Q > 0:
