@@ -14,8 +14,7 @@ import scipy.sparse.linalg
 import scipy.weave
 
 #--- magic numbers              ---#
-# NOTE :2013-03-20 12:04:50 by Brian McFee <brm2132@columbia.edu>
-#  it is of utmost importance that these numbers be floats and not ints.
+#  it is of utmost importance that these numbers be floats
 
 RHO_INIT_A  =   2e-3        # Initial value for rho (encoder)
 RHO_INIT_D  =   2e-1        # Initial value for rho (dictionary)
@@ -30,37 +29,119 @@ T_CHECKUP   =   5           # number of steps between convergence tests
 
 #--- Utility functions          ---#
 
-def complex_to_real2(X):
+def patches_to_vectors(patches, pad=False):
+    """Convert a stack of patches into their 2D fourier transforms.
+
+    This function takes a stack of 2-D patches and converts them into the 
+    format used by the encoding algorithm.
+
+    The steps are as follows:
+
+    1. 2D-DFT each patch
+    2. Vectorize the transformed patches
+    3. Stack vectors into columns
+    4. Separate real and imaginary components
+
+    See also: vectors_to_patches()
+
+    Arguments:
+      patches   --  (ndarray)   height-by-width-by-n data matrix
+      pad       --  (boolean)   pad the DFT?                |default: False
+    
+    Returns X:
+      vectors   --  (ndarray)   (2*height*width*?)-by-n matrix
+                                If padding, the matrix is 4 times as tall.
+
+    """
+    
+    (height, width, num_samples) = patches.shape
+
+    if pad:
+        x_shape = (2 * height, 2 * width)
+    else:
+        x_shape = (height, width)
+
+    patch_dft   = numpy.fft.fft2(patches, s=x_shape, axes=(0, 1))
+    return complex_to_real2(patch_dft.reshape( (numpy.prod(x_shape), 
+                                                num_samples), order='F'))
+
+def vectors_to_patches(vectors, width, pad=False, real=True):
+    """Convert a matrix of real-imag separated columns into a stack of patches
+
+    1. Combine real+imag components
+    2. Reshape into a 3d-stack
+    3. Inverse DFT each frame in the stack
+    4. Undo padding effects
+
+    See also: patches_to_vectors()
+
+    Arguments:
+      vectors   -- (ndarray) 
+      width     -- (int>0)      width of the patches
+      pad       -- (boolean)    is the data padded?         | default: False
+      real      -- (boolean)    force output to be real     | default: True
+
+    Returns:
+      patches   -- (ndarray)    height-by-width-by-n real-valued
+
+    """
+
+    # First, convert to complex
+    vectors = real2_to_complex(vectors)
+
+    (size, num_samples) = vectors.shape
+
+    # Reshape into patches
+    if pad:
+        height = size / (4 * width)
+        vectors = vectors.reshape((2 * height, 2 * width, num_samples), 
+                                  order='F')
+    else:
+        height = size / width
+        vectors = vectors.reshape((height, width, num_samples), 
+                                  order='F')
+
+    # Inverse DFT and truncate
+    patches = numpy.fft.ifft2(vectors, axes=(0, 1))[:height, :width, :]
+
+    if real:
+        patches = patches.real
+
+    return patches
+
+
+def complex_to_real2(x_complex):
     """Separate the real and imaginary components of a matrix
 
     See also: real2_to_complex()
 
     Arguments:
-        X       -- (ndarray)    complex d-by-n matrix
+        x_complex   -- (ndarray)    complex d-by-n matrix
 
-    Returns Y:
-        Y       -- (ndarray)    Y = [real(X) ; imag(X)]
+    Returns:
+        x_real2     -- (ndarray)    [real(x_complex) ; imag(x_complex)]
 
     """
-    return numpy.vstack((X.real, X.imag))
+    return numpy.vstack((x_complex.real, x_complex.imag))
 
-def real2_to_complex(Y):
+def real2_to_complex(x_real2):
     """Combine the real and imaginary components of a matrix
 
     See also: complex_to_real2()
 
     Arguments:
-        Y       --  (ndarray)   real 2d-by-n from complex_to_real2()
+        x_real2     --  (ndarray)   real 2d-by-n from complex_to_real2()
 
     Returns X:
-        X       --  (ndarray)   complex d-by-n
+        x_complex   --  (ndarray)   complex d-by-n
 
     """
-    d = Y.shape[0] / 2
-    if Y.ndim > 1:
-        return Y[:d, :] + 1.j * Y[d:, :]
+    d_imag = x_real2.shape[0] / 2
+
+    if x_real2.ndim > 1:
+        return x_real2[:d_imag, :] + 1.j * x_real2[d_imag:, :]
     else:
-        return Y[:d] + 1.j * Y[d:]
+        return x_real2[:d_imag] + 1.j * x_real2[d_imag:]
 
 
 def diags_to_columns(Q):
@@ -897,7 +978,7 @@ def dictionary(StS, StX, m, max_iter=200, Dinitial=None):
 #---                            ---#
 
 #--- Alternating minimization   ---#
-def batch_generator(X, batch_size, max_steps):
+def _batches(X, batch_size, max_steps):
     """Mini-batch generator
 
     Arguments:
@@ -1041,7 +1122,7 @@ def learn_dictionary(X, m,  reg='l1_space',
     # Initialize the dictionary
     D = init_svd(X, m)
     
-    for (T, X_batch) in enumerate(batch_generator(X, batch_size, max_steps), 1):
+    for (T, X_batch) in enumerate(_batches(X, batch_size, max_steps), 1):
 
         ###
         # Encode the data bacth
