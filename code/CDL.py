@@ -25,6 +25,7 @@ RELTOL      =   1e-3        # relative tolerance
 MU          =   1e1         # maximum ratio between primal and dual residuals
 TAU         =   2e0         # scaling for rho when primal/dual exceeds MU
 T_CHECKUP   =   5           # number of steps between convergence tests
+BETA        =   1e0         # decay factor for mini-batch learning
 #---                            ---#
 
 #--- Utility functions          ---#
@@ -349,11 +350,8 @@ def reg_l1_real(X, rho, lam, nonneg=False, Xout=None):
     # Apply the soft-thresholding operator
     return Xout
 
-def reg_l1_space(A, rho, lam,   width=None, 
-                                height=None, 
-                                nonneg=False, 
-                                fft_pad=False, 
-                                Xout=None):
+def reg_l1_space(A, rho, lam, height=None, width=None, nonneg=False, 
+                 fft_pad=False, Xout=None):
     """Spatial L1 sparsity: 
         - inverse 2d-DFT to A
         - l1 shrinkage
@@ -552,21 +550,24 @@ def reg_l2_group(X, rho, lam, m, Xout=None):
     return Xout
 
 
-def reg_lowpass(A, rho, lam, width=None, height=None, Xout=None):
+def reg_lowpass(A, rho, lam, height=None, width=None, Xout=None):
     """Lowpass regularization: penalizes square of first-derivative
     
     Arguments:
       A         --  (ndarray) 2*d*m-by-n activation matrix
       rho       --  (float>0) augmented lagrangian scaling parameter
       lam       --  (float>0) weight on the regularization term
-      width     --  (int>0)   d = w * h specifies the patch shape
       height    --  (int>0)
+      width     --  (int>0)   d = w * h specifies the patch shape
       Xout      --  (ndarray) optional output destination
 
     Returns:
       Xout      --  smoothed version of A
 
     """
+
+    #     FIXME:  2013-04-01 11:55:08 by Brian McFee <brm2132@columbia.edu>
+    # does not support fftpad 
 
     d2m     = A.shape[0]
     d       = width * height
@@ -576,14 +577,14 @@ def reg_lowpass(A, rho, lam, width=None, height=None, Xout=None):
         Xout = numpy.empty_like(A, order='A')
 
     # Build the lowpass filter
-    lowpass     = numpy.array([ [-1, 0, 1] ]) / 2
+    lowpass  = numpy.array([ [-1, 0, 1] ]) / 2
     H   = numpy.fft.fft2(lowpass, s=(height, width)).reshape((d, 1), order='F')
     H   = numpy.tile(numpy.abs(H), (2 * m, 1))
 
     S   = (rho / lam) * (1.0 + H**2)**(-1)
+
     # Invert the filter
     Xout[:] = S * A
-
 
     return Xout
 
@@ -774,9 +775,11 @@ def parallel_encoder(X, D, reg, n_threads=4,
     n   = X.shape[1]
     dm  = D.shape[1]
 
+    step = n / n_threads
+
     # Punt to the local encoder if we're single-threaded or don't have enough 
     # data to distrubute
-    if n_threads == 1 or n < n_threads:
+    if n_threads == 1 or step == 0:
         return _encoder(X, D, reg, 
                          max_iter=max_iter, 
                          output_diagnostics=output_diagnostics)
@@ -807,12 +810,10 @@ def parallel_encoder(X, D, reg, n_threads=4,
     output_queue   = mp.Queue()
 
     # Build up the input queue
-    num_Q   = 0
-    B       = n / n_threads
-    for i in xrange(0, n, B):
-        j = min(n, i + B)
-        input_queue.put( (i, j) )
-        num_Q += 1
+    num_queue = 0
+    for i in xrange(0, n, step):
+        input_queue.put( (i, min(n, i + step)) )
+        num_queue += 1
 
     # Launch encoders
     for i in range(n_threads):
@@ -822,11 +823,11 @@ def parallel_encoder(X, D, reg, n_threads=4,
     input_queue.close()
 
     diagnostics = []
-    while num_Q > 0:
+    while num_queue > 0:
         (i, j, a_ij, diags) = output_queue.get(True)
-        A[:, i:j] = a_ij
+        A[:, i:j]   = a_ij
         diagnostics.append(diags)
-        num_Q    -= 1
+        num_queue   -= 1
 
     if output_diagnostics:
         return (A, diagnostics)
@@ -1034,8 +1035,8 @@ def learn_dictionary(X, m,  reg='l1_space',
       **kwargs      --  Additional keyword arguments to regularizers:
 
         For l1_space:
-            width   -- (int>0)    patch width
             height  -- (int>0)    patch height: d = width * height
+            width   -- (int>0)    patch width
             fft_pad -- (boolean)  are the patches zero-padded?  | default: False
 
     Returns (encode, D, diagnostics):
@@ -1061,16 +1062,16 @@ def learn_dictionary(X, m,  reg='l1_space',
     ###
     # Configure the encoding regularizer
     if reg == 'l2_group':
-        g   = functools.partial(    reg_l2_group,   lam=lam, m=m)
+        regularize  = functools.partial(    reg_l2_group,   lam=lam, m=m)
 
     elif reg == 'l1':
-        g   = functools.partial(    reg_l1_complex, lam=lam)
+        regularize  = functools.partial(    reg_l1_complex, lam=lam)
 
     elif reg == 'l1_space':
-        g   = functools.partial(    reg_l1_space,   lam=lam, **kwargs)
+        regularize  = functools.partial(    reg_l1_space,   lam=lam, **kwargs)
 
     elif reg == 'lowpass':
-        g   = functools.partial(    reg_lowpass,    lam=lam, **kwargs)
+        regularize  = functools.partial(    reg_lowpass,    lam=lam, **kwargs)
 
     else:
         raise ValueError('Unknown regularization: %s' % reg)
@@ -1115,7 +1116,6 @@ def learn_dictionary(X, m,  reg='l1_space',
                                       n_threads=n_threads,
                                       output_diagnostics=True)
 
-    beta    = 1.0
     error   = []
 
     ###
@@ -1126,18 +1126,17 @@ def learn_dictionary(X, m,  reg='l1_space',
 
         ###
         # Encode the data bacth
-        (A, A_diags) = local_encoder(X_batch, D, g, max_iter=max_admm_steps)
+        (A, A_diags) = local_encoder(X_batch, D, regularize, 
+                                     max_iter=max_admm_steps)
 
         diagnostics['encoder'].append(A_diags)
         
         error.append(numpy.mean((D * A - X_batch)**2))
         print '%4d| [A] MSE=%.3e' % (T, error[-1]),
 
-        #   TODO:   2013-03-19 12:56:47 by Brian McFee <brm2132@columbia.edu>
-        #   parallelize encoding statistics
         (StS_new, StX_new)  = _encoding_statistics(A, X_batch)
 
-        alpha = (1.0 - 1.0/T)**beta
+        alpha = (1.0 - 1.0/T)**BETA
 
         if T == 1:
             # For the first batch, take the encoding statistics as is
@@ -1160,10 +1159,6 @@ def learn_dictionary(X, m,  reg='l1_space',
         print '\t| [D] MSE=%.3e' %  error[-1],
         print '\t| [A-D] %.3e' % (error[-2] - error[-1])
 
-        # TODO:   2013-03-19 12:55:29 by Brian McFee <brm2132@columbia.edu>
-        # at this point, it would be prudent to patch any zeros in the 
-        # dictionary with random examples
-
         # Rescale the dictionary: this can only help
         D = normalize_dictionary(D)
 
@@ -1174,7 +1169,7 @@ def learn_dictionary(X, m,  reg='l1_space',
     my_encoder = functools.partial(parallel_encoder, 
                                    n_threads=n_threads, 
                                    D=D, 
-                                   reg=g, 
+                                   reg=regularize, 
                                    max_iter=max_admm_steps, 
                                    output_diagnostics=False)
 
