@@ -7,7 +7,7 @@ CREATED:2013-03-01 08:19:26 by Brian McFee <brm2132@columbia.edu>
 import functools
 import multiprocessing as mp
 
-import numpy
+import numpy as np
 import scipy.linalg
 import scipy.sparse
 import scipy.sparse.linalg
@@ -62,8 +62,8 @@ def patches_to_vectors(patches, pad=False):
     else:
         x_shape = (height, width)
 
-    patch_dft   = numpy.fft.fft2(patches, s=x_shape, axes=(0, 1))
-    return complex_to_real2(patch_dft.reshape( (numpy.prod(x_shape), 
+    patch_dft   = np.fft.fft2(patches, s=x_shape, axes=(0, 1))
+    return complex_to_real2(patch_dft.reshape( (np.prod(x_shape), 
                                                 num_samples), order='F'))
 
 def vectors_to_patches(vectors, width, pad=False, real=True):
@@ -103,7 +103,7 @@ def vectors_to_patches(vectors, width, pad=False, real=True):
                                   order='F')
 
     # Inverse DFT and truncate
-    patches = numpy.fft.ifft2(vectors, axes=(0, 1))[:height, :width, :]
+    patches = np.fft.ifft2(vectors, axes=(0, 1))[:height, :width, :]
 
     if real:
         patches = patches.real
@@ -123,7 +123,7 @@ def complex_to_real2(x_complex):
         x_real2     -- (ndarray)    [real(x_complex) ; imag(x_complex)]
 
     """
-    return numpy.vstack((x_complex.real, x_complex.imag))
+    return np.vstack((x_complex.real, x_complex.imag))
 
 def real2_to_complex(x_real2):
     """Combine the real and imaginary components of a matrix
@@ -168,7 +168,7 @@ def diags_to_columns(Q):
     dm  = d2m   / 2
     m   = dm    / d
     
-    D = numpy.empty( (d2, m) )
+    D = np.empty( (d2, m) )
 
     for k in xrange(0, d * m, d):
         D[:d, k/d] = Q[range(d), range(k, k + d)]
@@ -236,9 +236,9 @@ def columns_to_vector(X):
 
     d = d2 / 2
 
-    A = numpy.reshape(X[:d, :], (d * m, 1), order='F')
-    B = numpy.reshape(X[d:, :], (d * m, 1), order='F')
-    return numpy.vstack( (A, B) ).flatten()
+    A = np.reshape(X[:d, :], (d * m, 1), order='F')
+    B = np.reshape(X[d:, :], (d * m, 1), order='F')
+    return np.vstack( (A, B) ).flatten()
 
 def vector_to_columns(AB, m):
     """Unstack a column vector into a real+imag matrix
@@ -259,10 +259,10 @@ def vector_to_columns(AB, m):
 
     d = d2m / (2 * m)
 
-    A = numpy.reshape(AB[:(d*m)], (d, m), order='F')
-    B = numpy.reshape(AB[(d*m):], (d, m), order='F')
+    A = np.reshape(AB[:(d*m)], (d, m), order='F')
+    B = np.reshape(AB[(d*m):], (d, m), order='F')
 
-    return numpy.vstack( (A, B) )
+    return np.vstack( (A, B) )
 
 def normalize_dictionary(D):
     """Normalize a dictionary to have all unit-length bases.
@@ -276,9 +276,48 @@ def normalize_dictionary(D):
 
     """
     D = diags_to_columns(D)
-    D = D / (numpy.sum(D**2, axis=0) ** 0.5)
+    D = D / (np.sum(D**2, axis=0) ** 0.5)
     D = columns_to_diags(D)
     return D
+
+
+def pool(A, depth_h=0, depth_w=0, agg=np.sum, absval=True):
+    """Spatial pyramid pooling
+
+    Arguments:
+        A           -- (ndarray)    height-by-width activation patch
+        depth_h     -- (int>=0)     # vertical splits
+        depth_w     -- (int>=0)     # horizontal splits
+        agg         -- (function)   aggregator function
+        absval      -- (boolean)    apply abs() before pooling
+
+    Returns:
+        P           -- (ndarray)    vector of activation energy aggregated 
+                                    at multiple tree levels
+
+    Notes:
+        The dimensions of A are assumed to be powers of 2
+        Output vector has dimension 
+            ((2^(1+depth_h) - 1) * (2^(1+depth_w) - 1))
+    """
+
+    (height, width) = A.shape
+
+    if absval:
+        A = np.abs(A)
+
+    P = []
+    for h_level in range(1 + depth_h):
+        step_h = int(height * 2.0 **(-h_level))
+
+        for w_level in range(1 + depth_w):
+            step_w = int(width * 2.0 **(-w_level))
+
+            for u in range(0, height, step_h):
+                for v in range(0, width, step_w):
+                    P.append(agg(A[u:u+step_h, v:v+step_w]))
+
+    return np.array(P)
 #---                            ---#
 
 
@@ -300,7 +339,7 @@ def init_svd(X, m):
     # Draw a subsample
     n           = X.shape[1]
     n_sample    = min(n, m**2)
-    Xsamp       = X[:, numpy.random.randint(0, n, n_sample)]
+    Xsamp       = X[:, np.random.randint(0, n, n_sample)]
     U           = scipy.linalg.svd(Xsamp)[0]
     return normalize_dictionary(columns_to_diags(U[:, :m]))
 #---                            ---#
@@ -325,7 +364,7 @@ def reg_l1_real(X, rho, lam, nonneg=False, Xout=None):
 
     if Xout is None:
         # order=A to preserve indexing order of X
-        Xout = numpy.empty_like(X, order='A')
+        Xout = np.empty_like(X, order='A')
 
     numel       = X.size
 
@@ -384,13 +423,13 @@ def reg_l1_space(A, rho, lam, height=None, width=None, nonneg=False,
     m           = d2m / (2 * d)
 
     if Xout is None:
-        Xout    = numpy.empty_like(A, order='A')
+        Xout    = np.empty_like(A, order='A')
 
     # Reshape activations, transform each one back into image space
-    Aspace      = numpy.fft.ifft2(numpy.reshape(real2_to_complex(A), 
-                                                (height, width, m, n), 
-                                                order='F'), 
-                                  axes=(0, 1)).real
+    Aspace      = np.fft.ifft2(np.reshape(real2_to_complex(A), 
+                                          (height, width, m, n), 
+                                          order='F'), 
+                               axes=(0, 1)).real
 
     # Apply shrinkage
     # FIXME:  2013-03-11 12:19:56 by Brian McFee <brm2132@columbia.edu>
@@ -406,10 +445,9 @@ def reg_l1_space(A, rho, lam, height=None, width=None, nonneg=False,
         Aspace[(height/2):, (width/2):, :, :] = 0.0
 
     # Transform back, reshape, and separate real from imaginary
-    Xout[:] = complex_to_real2(numpy.reshape(numpy.fft.fft2(Aspace, 
-                                                          axes=(0, 1)), 
-                                             (height * width * m, n), 
-                                             order='F'))[:]
+    Xout[:] = complex_to_real2(np.reshape(np.fft.fft2(Aspace, axes=(0, 1)), 
+                                          (height * width * m, n), 
+                                          order='F'))[:]
     return Xout
 
 def reg_l1_complex(X, rho, lam, Xout=None):
@@ -434,7 +472,7 @@ def reg_l1_complex(X, rho, lam, Xout=None):
     dm          = d2m / 2
 
     if Xout is None:
-        Xout = numpy.empty_like(X, order='A')
+        Xout = np.empty_like(X, order='A')
 
 
     threshold   = float(lam / rho)
@@ -485,7 +523,7 @@ def reg_l2_group(X, rho, lam, m, Xout=None):
     #   2.  apply soft-thresholding group-wise
 
     # Group 2-norm by codeword
-    Z           = numpy.empty( (m, n) )
+    Z           = np.empty( (m, n) )
 
     l2_subvectors = r"""
     for (int i = 0; i < n; i++) {
@@ -517,7 +555,7 @@ def reg_l2_group(X, rho, lam, m, Xout=None):
     threshold   = float(lam / rho)
 
     if Xout is None:
-        Xout     = numpy.empty_like(X, order='A')
+        Xout     = np.empty_like(X, order='A')
 
     group_shrinkage =   r"""
     for (int i = 0; i < n; i++) {
@@ -574,12 +612,12 @@ def reg_lowpass(A, rho, lam, height=None, width=None, Xout=None):
     m       = d2m / (2 * d)
 
     if Xout is None:
-        Xout = numpy.empty_like(A, order='A')
+        Xout = np.empty_like(A, order='A')
 
     # Build the lowpass filter
-    lowpass  = numpy.array([ [-1, 0, 1] ]) / 2
-    H   = numpy.fft.fft2(lowpass, s=(height, width)).reshape((d, 1), order='F')
-    H   = numpy.tile(numpy.abs(H), (2 * m, 1))
+    lowpass  = np.array([ [-1, 0, 1] ]) / 2
+    H   = np.fft.fft2(lowpass, s=(height, width)).reshape((d, 1), order='F')
+    H   = np.tile(np.abs(H), (2 * m, 1))
 
     S   = (rho / lam) * (1.0 + H**2)**(-1)
 
@@ -606,15 +644,15 @@ def proj_l2_ball(X, m):
     Xnorm   = X[:(d*m)]**2 + X[(d*m):]**2   
 
     # Group by codewords
-    Z = numpy.empty(m)
+    Z = np.empty(m)
     for k in xrange(m):
-        Z[k] = max(1.0, numpy.sum(Xnorm[k*d:(k+1)*d])**0.5)
+        Z[k] = max(1.0, np.sum(Xnorm[k*d:(k+1)*d])**0.5)
     
     # Repeat and tile each norm
-    Z       = numpy.tile(numpy.repeat(Z, d), (1, 2)).flatten()
+    Z       = np.tile(np.repeat(Z, d), (1, 2)).flatten()
 
     # Project
-    Xp      = numpy.zeros(2 * d * m)
+    Xp      = np.zeros(2 * d * m)
     Xp[:]   = X / Z
     return Xp
 #---                            ---#
@@ -644,8 +682,8 @@ def _encoder(X, D, reg, max_iter=200, output_diagnostics=True):
     n       = X.shape[1]
 
     # Initialize split parameter
-    Z   = numpy.zeros( (d*m, n) )
-    O   = numpy.zeros( (d*m, n) )
+    Z   = np.zeros( (d*m, n) )
+    O   = np.zeros( (d*m, n) )
 
     # Initialize augmented lagrangian weight
     rho = RHO_INIT_A
@@ -740,11 +778,11 @@ def _encoder(X, D, reg, max_iter=200, output_diagnostics=True):
 
 
     # Append to diagnostics
-    _DIAG['err_primal' ]    = numpy.array(_DIAG['err_primal'])
-    _DIAG['err_dual' ]      = numpy.array(_DIAG['err_dual'])
-    _DIAG['eps_primal' ]    = numpy.array(_DIAG['eps_primal'])
-    _DIAG['eps_dual' ]      = numpy.array(_DIAG['eps_dual'])
-    _DIAG['rho' ]           = numpy.array(_DIAG['rho'])
+    _DIAG['err_primal' ]    = np.array(_DIAG['err_primal'])
+    _DIAG['err_dual' ]      = np.array(_DIAG['err_dual'])
+    _DIAG['eps_primal' ]    = np.array(_DIAG['eps_primal'])
+    _DIAG['eps_dual' ]      = np.array(_DIAG['eps_dual'])
+    _DIAG['rho' ]           = np.array(_DIAG['rho'])
     _DIAG['num_steps']      = t
 
     if output_diagnostics:
@@ -784,7 +822,7 @@ def parallel_encoder(X, D, reg, n_threads=4,
                          max_iter=max_iter, 
                          output_diagnostics=output_diagnostics)
 
-    A   = numpy.empty( (dm, n), order='F')
+    A   = np.empty( (dm, n), order='F')
 
     def _consumer(input_queue, output_queue):
         while not input_queue.empty():
@@ -891,9 +929,9 @@ def dictionary(StS, StX, m, max_iter=200, Dinitial=None):
     # Initialize ADMM variables
     rho     = RHO_INIT_D
 
-    D       = numpy.zeros( d2m, order='F' )         # Unconstrained dictionary
-    E       = numpy.zeros_like(D, order='A')        # l2-constrained dictionary
-    W       = numpy.zeros_like(E, order='A')        # Scaled dual variables
+    D       = np.zeros( d2m, order='F' )         # Unconstrained dictionary
+    E       = np.zeros_like(D, order='A')        # l2-constrained dictionary
+    W       = np.zeros_like(E, order='A')        # Scaled dual variables
 
     if Dinitial is not None:
         E[:]    = columns_to_vector(diags_to_columns(Dinitial))
@@ -968,11 +1006,11 @@ def dictionary(StS, StX, m, max_iter=200, Dinitial=None):
 
 
     # Numpyfy the diagnostics
-    _DIAG['err_primal' ]    = numpy.array(_DIAG['err_primal'])
-    _DIAG['err_dual' ]      = numpy.array(_DIAG['err_dual'])
-    _DIAG['eps_primal' ]    = numpy.array(_DIAG['eps_primal'])
-    _DIAG['eps_dual' ]      = numpy.array(_DIAG['eps_dual'])
-    _DIAG['rho' ]           = numpy.array(_DIAG['rho'])
+    _DIAG['err_primal' ]    = np.array(_DIAG['err_primal'])
+    _DIAG['err_dual' ]      = np.array(_DIAG['err_dual'])
+    _DIAG['eps_primal' ]    = np.array(_DIAG['eps_primal'])
+    _DIAG['eps_dual' ]      = np.array(_DIAG['eps_dual'])
+    _DIAG['rho' ]           = np.array(_DIAG['rho'])
     _DIAG['num_steps']      = t
 
     return (columns_to_diags(vector_to_columns(E, m)), _DIAG)
@@ -1001,7 +1039,7 @@ def _batches(X, batch_size, max_steps):
         if batch_size == n:
             yield X
         else:
-            yield X[:, numpy.random.randint(0, n, batch_size)]
+            yield X[:, np.random.randint(0, n, batch_size)]
 
 
 def learn_dictionary(X, m,  reg='l1_space', 
@@ -1131,7 +1169,7 @@ def learn_dictionary(X, m,  reg='l1_space',
 
         diagnostics['encoder'].append(A_diags)
         
-        error.append(numpy.mean((D * A - X_batch)**2))
+        error.append(np.mean((D * A - X_batch)**2))
         print '%4d| [A] MSE=%.3e' % (T, error[-1]),
 
         (StS_new, StX_new)  = _encoding_statistics(A, X_batch)
@@ -1155,7 +1193,7 @@ def learn_dictionary(X, m,  reg='l1_space',
 
         diagnostics['dictionary'].append(D_diags)
 
-        error.append(numpy.mean((D * A - X_batch)**2))
+        error.append(np.mean((D * A - X_batch)**2))
         print '\t| [D] MSE=%.3e' %  error[-1],
         print '\t| [A-D] %.3e' % (error[-2] - error[-1])
 
@@ -1163,7 +1201,7 @@ def learn_dictionary(X, m,  reg='l1_space',
         D = normalize_dictionary(D)
 
 
-    diagnostics['error'] = numpy.array(error)
+    diagnostics['error'] = np.array(error)
 
     # Package up the learned encoder function for future use
     my_encoder = functools.partial(parallel_encoder, 
