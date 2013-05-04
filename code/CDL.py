@@ -79,6 +79,7 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
             Returns the instance itself.
         '''
 
+        width = X.shape[2]
         extra_args = {}
         if self.penalty == 'l1_space':
             extra_args['height']    = X.shape[1]
@@ -101,6 +102,9 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
                                                     verbose     = self.verbose,
                                                     shuffle     = self.shuffle,
                                                     **extra_args)
+        D                = cdl.diags_to_columns(D)
+        D                = cdl.vectors_to_patches(D, width, pad_data=self.pad_data)
+        D                = D.swapaxes(1,2).swapaxes(0,1)
         self.components_ = D
         self.encoder_    = encoder
         return self
@@ -114,7 +118,7 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
 
         Returns
         -------
-        X_new : array, shape (n_samples, n_components, n_features_y, n_features_x)
+        X_new : array, shape (n_samples, n_atoms, n_features_y, n_features_x)
         '''
 
         # Swap axes
@@ -124,23 +128,24 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
 
         # FIXME:  2013-05-03 22:52:30 by Brian McFee <brm2132@columbia.edu>
         # can we make this more memory-efficient?         
+
         # Fourier transform
         X_new = cdl.patches_to_vectors(X, pad_data=self.pad_data)
 
         # Encode
         X_new = self.encoder_(X_new)
-
+    
+        #AS = A.reshape( (A.shape[0] / M, n * M), order='F')
         # Reshape each activation into its own frame
-        X_new = X_new.reshape( (X_new.shape[0] / self.n_atoms, n * self.n_atoms),
-                                order='F')
+        X_new = X_new.reshape( (X_new.shape[0] / self.n_atoms, -1), order='F')
 
         # Transform back
+        #AS = CDL.cdl.vectors_to_patches(AS, W, pad_data=pad, real=True)
         X_new = cdl.vectors_to_patches(X_new, w, pad_data=self.pad_data, real=True)
-        # X_new is now h-by-w-by-n*n_atoms
 
-        X_new = X_new.reshape( (h, w, n, self.n_atoms), order='F')
-
-        # Now X_new is h-by-w-by-n-by-n_atoms.  Permute into the shape we want
-        X_new = X_new.swapaxes(1,2).swapaxes(2,3).swapaxes(0,1).swapaxes(1,2)
+        # Regroup patches per original frame
+        #AS = AS.reshape( (AS.shape[0], AS.shape[1], AS.shape[2] / n, n), order='F')
+        X_new = X_new.reshape( (X_new.shape[0], X_new.shape[1], -1, n), order='F')
+        X_new = X_new.swapaxes(3,2).swapaxes(2,1).swapaxes(0,1).swapaxes(3,2).swapaxes(2,1)
 
         return X_new
