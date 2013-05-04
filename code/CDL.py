@@ -146,6 +146,6 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         # Regroup patches per original frame
         #AS = AS.reshape( (AS.shape[0], AS.shape[1], AS.shape[2] / n, n), order='F')
         X_new = X_new.reshape( (X_new.shape[0], X_new.shape[1], -1, n), order='F')
-        X_new = X_new.swapaxes(3,2).swapaxes(2,1).swapaxes(0,1).swapaxes(3,2).swapaxes(2,1)
+        X_new = X_new.swapaxes(3,0).swapaxes(3,2).swapaxes(3,1)
 
         return X_new
