@@ -236,26 +236,26 @@ def test_proj_l2_ball():
 
 def test_reg_l1_real():
 
-    def __test(d, n, rho, lam, nonneg):
-        # Generate a random matrix, scale by lam/rho to encourage
+    def __test(d, n, rho, alpha, nonneg):
+        # Generate a random matrix, scale by alpha/rho to encourage
         # non-trivial solutions
-        X = numpy.random.randn(d, n) * lam / rho
+        X = numpy.random.randn(d, n) * alpha / rho
 
         # Compute shrinkage on X
-        Xshrunk = (X > lam / rho) * (X - lam / rho)
+        Xshrunk = (X > alpha / rho) * (X - alpha / rho)
 
         if not nonneg:
-            Xshrunk = Xshrunk + (X < -lam / rho) * (X + lam / rho)
+            Xshrunk = Xshrunk + (X < -alpha / rho) * (X + alpha / rho)
             pass
 
         # First, test without pre-allocation
-        Xout = cdl.reg_l1_real(X, rho, lam, nonneg)
+        Xout = cdl.reg_l1_real(X, rho, alpha, nonneg)
 
         assert EQ(Xout, Xshrunk)
 
         # Now test with pre-allocation
         Xout_pre = numpy.zeros_like(X, order='A')
-        cdl.reg_l1_real(X, rho, lam, nonneg, Xout_pre)
+        cdl.reg_l1_real(X, rho, alpha, nonneg, Xout_pre)
 
         assert EQ(Xout_pre, Xshrunk)
         pass
@@ -263,29 +263,29 @@ def test_reg_l1_real():
     for d in 2**numpy.arange(0, 4):
         for n in 2**numpy.arange(0, 4):
             for rho in 2.0**numpy.arange(-4, 4):
-                for lam in 10.0**numpy.arange(-3, 1):
+                for alpha in 10.0**numpy.arange(-3, 1):
                     for nonneg in [False, True]:
-                        yield (__test, int(d), int(n), rho, lam, nonneg)
+                        yield (__test, int(d), int(n), rho, alpha, nonneg)
     pass
 
 def test_reg_l1_complex():
 
-    def __test(d, n, rho, lam):
-        # Generate a random matrix, scale by lam/rho to encourage
+    def __test(d, n, rho, alpha):
+        # Generate a random matrix, scale by alpha/rho to encourage
         # non-trivial solutions
-        X = numpy.random.randn(2 * d, n) * lam / rho
+        X = numpy.random.randn(2 * d, n) * alpha / rho
 
         # Compute magnitudes of complex values
         X_cplx  = cdl.real2_to_complex(X)
         X_abs   = numpy.abs(X_cplx)
 
         # Compute shrinkage on X
-        # x -> (1 - (lam/rho) / |x|)_+ * x
+        # x -> (1 - (alpha/rho) / |x|)_+ * x
         S       = X_abs.copy()
 
         # Avoid numerical instability here
-        S[S < lam / rho] = (lam / rho)
-        S   = (1 - (lam/rho) / S)
+        S[S < alpha / rho] = (alpha / rho)
+        S   = (1 - (alpha/rho) / S)
         
         # Tile it to get real and complex
         S   = numpy.tile(S, (2, 1))
@@ -294,13 +294,13 @@ def test_reg_l1_complex():
         Xshrunk = X * S
 
         # First, test without pre-allocation
-        Xout = cdl.reg_l1_complex(X, rho, lam)
+        Xout = cdl.reg_l1_complex(X, rho, alpha)
 
         assert EQ(Xout, Xshrunk, rtol=1e-3, atol=1e-6)
 
         # Now test with pre-allocation
         Xout_pre = numpy.zeros_like(X, order='A')
-        cdl.reg_l1_complex(X, rho, lam, Xout_pre)
+        cdl.reg_l1_complex(X, rho, alpha, Xout_pre)
 
         assert EQ(Xout_pre, Xshrunk, rtol=1e-3, atol=1e-6)
         pass
@@ -308,17 +308,17 @@ def test_reg_l1_complex():
     for d in 2**numpy.arange(0, 4):
         for n in 2**numpy.arange(0, 4):
             for rho in 2.0**numpy.arange(-4, 4):
-                for lam in 10.0**numpy.arange(-3, 1):
-                    yield (__test, int(d), int(n), rho, lam)
+                for alpha in 10.0**numpy.arange(-3, 1):
+                    yield (__test, int(d), int(n), rho, alpha)
     pass
 
 
 def test_reg_l2_group():
 
-    def __test(d, m, n, rho, lam):
+    def __test(d, m, n, rho, alpha):
         # Generate a random matrix 2*d*m-by-n matrix
-        # scale by lam/rho to encourage non-trivial solutions
-        X = numpy.random.randn(2 * d * m, n) * lam / rho
+        # scale by alpha/rho to encourage non-trivial solutions
+        X = numpy.random.randn(2 * d * m, n) * alpha / rho
 
         # Compute the properly shrunk matrix
         X_cplx  = cdl.real2_to_complex(X)
@@ -333,8 +333,8 @@ def test_reg_l2_group():
 
         for i in range(n):
             for k in range(m):
-                if X_norms[k, i] > lam / rho:
-                    scale = 1.0 - lam / (rho * X_norms[k, i])
+                if X_norms[k, i] > alpha / rho:
+                    scale = 1.0 - alpha / (rho * X_norms[k, i])
                 else:
                     scale = 0.0
                 Xshrunk[(k*d):(k+1)*d, i] = scale * X[d*k:d*(k+1), i]
@@ -343,13 +343,13 @@ def test_reg_l2_group():
             pass
 
         # First, test without pre-allocation
-        Xout = cdl.reg_l2_group(X, rho, lam, m)
+        Xout = cdl.reg_l2_group(X, rho, alpha, m)
         assert EQ(Xout, Xshrunk)
 
         # Now test with pre-allocation
 
         Xout_pre = numpy.zeros_like(X, order='A')
-        cdl.reg_l2_group(X, rho, lam, m, Xout_pre)
+        cdl.reg_l2_group(X, rho, alpha, m, Xout_pre)
 
         assert EQ(Xout_pre, Xshrunk)
         pass
@@ -358,21 +358,21 @@ def test_reg_l2_group():
         for m in 2**numpy.arange(0, 8, 2):
             for n in 2**numpy.arange(0, 8, 2):
                 for rho in 2.0**numpy.arange(-2, 2):
-                    for lam in 10.0**numpy.arange(-2, 2):
-                        yield (__test, int(d), int(m), int(n), rho, lam)
+                    for alpha in 10.0**numpy.arange(-2, 2):
+                        yield (__test, int(d), int(m), int(n), rho, alpha)
     pass
 
 def test_reg_l1_space():
 
-    def __test(w, h, m, n, rho, lam, nonneg):
+    def __test(w, h, m, n, rho, alpha, nonneg):
         # Generate several frames of data
-        X_space = numpy.random.randn(h, w, m, n) * lam / rho
+        X_space = numpy.random.randn(h, w, m, n) * alpha / rho
 
         # Compute shrinkage point-wise
-        Xshrunk = (X_space > lam / rho) * (X_space - lam / rho)
+        Xshrunk = (X_space > alpha / rho) * (X_space - alpha / rho)
 
         if not nonneg:
-            Xshrunk = Xshrunk + (X_space < -lam / rho) * (X_space + lam / rho)
+            Xshrunk = Xshrunk + (X_space < -alpha / rho) * (X_space + alpha / rho)
 
         # Compute 2d-dfts
         X_freq  = numpy.fft.fft2(X_space, axes=(0, 1))
@@ -384,7 +384,7 @@ def test_reg_l1_space():
         X       = cdl.complex_to_real2(X_cols)
 
         # First try without pre-allocation
-        Xout    = cdl.reg_l1_space(X, rho, lam, width=w, height=h, nonneg=nonneg)
+        Xout    = cdl.reg_l1_space(X, rho, alpha, width=w, height=h, nonneg=nonneg)
 
         # Convert back to complex
         Xout_cplx = cdl.real2_to_complex(Xout)
@@ -400,7 +400,7 @@ def test_reg_l1_space():
 
         # Now do it again with pre-allocation
         Xout_pre = numpy.empty_like(X, order='A')
-        cdl.reg_l1_space(X, rho, lam, width=w, height=h, nonneg=nonneg, Xout=Xout_pre)
+        cdl.reg_l1_space(X, rho, alpha, width=w, height=h, nonneg=nonneg, Xout=Xout_pre)
 
         # Convert back to complex
         Xout_cplx_pre = cdl.real2_to_complex(Xout_pre)
@@ -418,8 +418,8 @@ def test_reg_l1_space():
             for m in 2**numpy.arange(0, 8, 4):
                 for n in 2**numpy.arange(0, 8, 4):
                     for rho in 2.0**numpy.arange(-2, 2):
-                        for lam in 10.0**numpy.arange(-2, 1):
+                        for alpha in 10.0**numpy.arange(-2, 1):
                             for nonneg in [False, True]:
-                                yield (__test, int(w), int(h), int(m), int(n), rho, lam, nonneg)
+                                yield (__test, int(w), int(h), int(m), int(n), rho, alpha, nonneg)
     pass
 #--                               --#

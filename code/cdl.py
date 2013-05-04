@@ -30,7 +30,7 @@ BETA        =   1e0         # decay factor for mini-batch learning
 
 #--- Utility functions          ---#
 
-def patches_to_vectors(patches, pad=False):
+def patches_to_vectors(patches, pad_data=False):
     """Convert a stack of patches into their 2D fourier transforms.
 
     This function takes a stack of 2-D patches and converts them into the 
@@ -47,7 +47,7 @@ def patches_to_vectors(patches, pad=False):
 
     Arguments:
       patches   --  (ndarray)   height-by-width-by-n data matrix
-      pad       --  (boolean)   pad the DFT?                |default: False
+      pad_data  --  (boolean)   pad the DFT?                |default: False
     
     Returns X:
       vectors   --  (ndarray)   (2*height*width*?)-by-n matrix
@@ -57,7 +57,7 @@ def patches_to_vectors(patches, pad=False):
     
     (height, width, num_samples) = patches.shape
 
-    if pad:
+    if pad_data:
         x_shape = (2 * height, 2 * width)
     else:
         x_shape = (height, width)
@@ -66,7 +66,7 @@ def patches_to_vectors(patches, pad=False):
     return complex_to_real2(patch_dft.reshape( (np.prod(x_shape), 
                                                 num_samples), order='F'))
 
-def vectors_to_patches(vectors, width, pad=False, real=True):
+def vectors_to_patches(vectors, width, pad_data=False, real=True):
     """Convert a matrix of real-imag separated columns into a stack of patches
 
     1. Combine real+imag components
@@ -79,7 +79,7 @@ def vectors_to_patches(vectors, width, pad=False, real=True):
     Arguments:
       vectors   -- (ndarray) 
       width     -- (int>0)      width of the patches
-      pad       -- (boolean)    is the data padded?         | default: False
+      pad_data  -- (boolean)    is the data padded?         | default: False
       real      -- (boolean)    force output to be real     | default: True
 
     Returns:
@@ -93,7 +93,7 @@ def vectors_to_patches(vectors, width, pad=False, real=True):
     (size, num_samples) = vectors.shape
 
     # Reshape into patches
-    if pad:
+    if pad_data:
         height = size / (4 * width)
         vectors = vectors.reshape((2 * height, 2 * width, num_samples), 
                                   order='F')
@@ -345,18 +345,18 @@ def init_svd(X, m):
 #---                            ---#
 
 #--- Regularization functions   ---#
-def reg_l1_real(X, rho, lam, nonneg=False, Xout=None):
+def reg_l1_real(X, rho, alpha, nonneg=False, Xout=None):
     """l1 regularization
     
     Arguments:  
       X         --  (ndarray)   array of reals
       rho       --  (float>0)   augmented lagrangian scaling parameter
-      lam       --  (float>0)   weight on the regularization term
+      alpha     --  (float>0)   weight on the regularization term
       nonneg    --  (boolean)   force non-negativity            |default: False
       Xout      --  (ndarray)   (optional)  destination for the shrunken value
 
     Returns:
-      Xout      --  (ndarray)   shrinkage(X, lam / rho)
+      Xout      --  (ndarray)   shrinkage(X, alpha / rho)
 
     Note: This routine exists for use within reg_l1_time and reg_l1_space.
           Not to be used directly.
@@ -368,7 +368,7 @@ def reg_l1_real(X, rho, lam, nonneg=False, Xout=None):
 
     numel       = X.size
 
-    threshold   = float(lam / rho)
+    threshold   = float(alpha / rho)
 
     shrinkage   = r"""
         for (int i = 0; i < numel; i++) {
@@ -389,8 +389,8 @@ def reg_l1_real(X, rho, lam, nonneg=False, Xout=None):
     # Apply the soft-thresholding operator
     return Xout
 
-def reg_l1_space(A, rho, lam, height=None, width=None, nonneg=False, 
-                 fft_pad=False, Xout=None):
+def reg_l1_space(A, rho, alpha, height=None, width=None, nonneg=False, 
+                 pad_data=False, Xout=None):
     """Spatial L1 sparsity: 
         - inverse 2d-DFT to A
         - l1 shrinkage
@@ -401,19 +401,19 @@ def reg_l1_space(A, rho, lam, height=None, width=None, nonneg=False,
     Arguments: 
       A         --  (ndarray)   2dm-by-n matrix of codeword activations
       rho       --  (float>0)   augmented lagrangian scaling parameter
-      lam       --  (float>0)   weight on the regularization term
+      alpha     --  (float>0)   weight on the regularization term
       width     --  (int)       d = width * height specifies the patch shape
       height    --  (int)       
       nonneg    --  (boolean)   force non-negativity        |default: False
-      fft_pad   --  (boolean)   is the input padded         |default: False
+      pad_data  --  (boolean)   is the input padded         |default: False
       Xout      --  (ndarray)   (optional) output destination
 
     Returns:
-      Xout      --  (ndarray)   fft2(shrinkage(ifft2(A), lam/rho))
+      Xout      --  (ndarray)   fft2(shrinkage(ifft2(A), alpha/rho))
 
     """
 
-    if fft_pad:
+    if pad_data:
         # If we have a padded FFT, then width and height should double
         width   = 2 * width
         height  = 2 * height
@@ -436,11 +436,11 @@ def reg_l1_space(A, rho, lam, height=None, width=None, nonneg=False,
     # this is some brutal hackery, but weave doesn't like 4-d arrays 
     Aspace = Aspace.flatten(order='F')
 
-    reg_l1_real(Aspace, rho, lam, nonneg, Aspace)
+    reg_l1_real(Aspace, rho, alpha, nonneg, Aspace)
     
     Aspace = Aspace.reshape((height, width, m, n), order='F')
 
-    if fft_pad:
+    if pad_data:
         # In a padded FFT, threshold out all out-of-scope activations
         Aspace[(height/2):, (width/2):, :, :] = 0.0
 
@@ -450,17 +450,17 @@ def reg_l1_space(A, rho, lam, height=None, width=None, nonneg=False,
                                           order='F'))[:]
     return Xout
 
-def reg_l1_complex(X, rho, lam, Xout=None):
+def reg_l1_complex(X, rho, alpha, Xout=None):
     """Complex l1 regularization
 
     Arguments:  
       X     --  (ndarray) 2*d*m-by-n matrix of codeword activations
       rho   --  (float>0) augmented lagrangian scaling parameter
-      lam   --  (float>0) weight on the regularization term
+      alpha --  (float>0) weight on the regularization term
       Xout  --  (ndarray) optional destination for the shrunken value
 
     Returns:
-      Xout  --  (ndarray)   (lam/rho)*Group-l2 shrunken version of X
+      Xout  --  (ndarray)   (alpha/rho)*Group-l2 shrunken version of X
 
     Note:
         This function applies shrinkage toward the disk in the complex plane.
@@ -475,7 +475,7 @@ def reg_l1_complex(X, rho, lam, Xout=None):
         Xout = np.empty_like(X, order='A')
 
 
-    threshold   = float(lam / rho)
+    threshold   = float(alpha / rho)
 
     complex_shrinkage   = r"""
     for (int i = 0; i < n; i++) {
@@ -500,18 +500,18 @@ def reg_l1_complex(X, rho, lam, Xout=None):
     return Xout
 
 
-def reg_l2_group(X, rho, lam, m, Xout=None):
+def reg_l2_group(X, rho, alpha, m, Xout=None):
     """Group-l2 regularization
 
     Arguments:  
       X     -- (ndarray) 2*d*m-by-n  matrix of codeword activations
       rho   -- (float>0) augmented lagrangian scaling parameter
-      lam   -- (float>0) weight on the regularization term
+      alpha -- (float>0) weight on the regularization term
       m     -- (int>0)   number of codewords (defines group size)
       Xout  -- (ndarray) optional destination for the shrunken value
 
     Returns:
-      Xout  -- (ndarray) (lam/rho)*Group-l2 shrunken version of X
+      Xout  -- (ndarray) (alpha/rho)*Group-l2 shrunken version of X
 
     """
 
@@ -552,7 +552,7 @@ def reg_l2_group(X, rho, lam, m, Xout=None):
     ### 
     # soft-thresholding
 
-    threshold   = float(lam / rho)
+    threshold   = float(alpha / rho)
 
     if Xout is None:
         Xout     = np.empty_like(X, order='A')
@@ -588,13 +588,13 @@ def reg_l2_group(X, rho, lam, m, Xout=None):
     return Xout
 
 
-def reg_lowpass(A, rho, lam, height=None, width=None, Xout=None):
+def reg_lowpass(A, rho, alpha, height=None, width=None, Xout=None):
     """Lowpass regularization: penalizes square of first-derivative
     
     Arguments:
       A         --  (ndarray) 2*d*m-by-n activation matrix
       rho       --  (float>0) augmented lagrangian scaling parameter
-      lam       --  (float>0) weight on the regularization term
+      alpha     --  (float>0) weight on the regularization term
       height    --  (int>0)
       width     --  (int>0)   d = w * h specifies the patch shape
       Xout      --  (ndarray) optional output destination
@@ -619,7 +619,7 @@ def reg_lowpass(A, rho, lam, height=None, width=None, Xout=None):
     H   = np.fft.fft2(lowpass, s=(height, width)).reshape((d, 1), order='F')
     H   = np.tile(np.abs(H), (2 * m, 1))
 
-    S   = (rho / lam) * (1.0 + H**2)**(-1)
+    S   = (rho / alpha) * (1.0 + H**2)**(-1)
 
     # Invert the filter
     Xout[:] = S * A
@@ -668,7 +668,7 @@ def _encoder(X, D, reg, max_iter=200, output_diagnostics=True):
       D         --  (sparse)    2d-by-2dm   dictionary
       reg       --  (function)  regularization function, e.g.,
 
-                    reg = functools.partial(CDL.reg_l2_group, lam=0.5, m=num_codewords)
+                    reg = functools.partial(CDL.reg_l2_group, alpha=0.5, m=num_codewords)
 
       max_iter  --  (int>0)     maximum number of steps     |default: 200
 
@@ -801,7 +801,7 @@ def parallel_encoder(X, D, reg, n_threads=4,
       D         -- (sparse)     2d-by-2dm dictionary
       reg       -- (function)   regularization function, eg:
                     
-                    reg = functools.partial(CDL.reg_l2_group, lam=0.5, m=num_codewords)
+                    reg = functools.partial(CDL.reg_l2_group, alpha=0.5, m=num_codewords)
 
       n_threads -- (int>0)      number of parallel threads      | default: 4
       max_iter  -- (int>0)      maximum number of steps         | default: 200
@@ -1017,14 +1017,14 @@ def dictionary(StS, StX, m, max_iter=200, Dinitial=None):
 #---                            ---#
 
 #--- Alternating minimization   ---#
-def _batches(X, batch_size, max_steps):
+def _batches(X, batch_size, max_steps, shuffle):
     """Mini-batch generator
 
     Arguments:
       X             --  (ndarray)   2d-by-n data matrix
       batch_size    --  (int>0)     number of points per btach
       max_steps     --  (int>0)     maximum number of batches to yield
-
+      shuffle       --  (bool)      shuffle between batches
     Yields:
       Xbatch        --  (ndarray)   2d-by-batch_size random column sample of X
 
@@ -1043,11 +1043,13 @@ def _batches(X, batch_size, max_steps):
 
 
 def learn_dictionary(X, m,  reg='l1_space', 
-                            lam=1e-1, 
+                            alpha=1e-1, 
                             max_steps=20, 
                             max_admm_steps=200, 
                             n_threads=1, 
                             batch_size=64, 
+                            verbose=False,
+                            shuffle=True,
                             **kwargs):
     """Alternating minimization to learn a convolutional dictionary
 
@@ -1069,13 +1071,15 @@ def learn_dictionary(X, m,  reg='l1_space',
       n_threads     -- (int>0)  number of encoder threads       | default: 1
       batch_size    -- (int>0)  number of points per step       | default: 64
                                 specify None to use all of X
+      shuffle       -- (bool)   shuffle data between batches
+      verbose       -- (bool)   show training progress
 
       **kwargs      --  Additional keyword arguments to regularizers:
 
         For l1_space:
             height  -- (int>0)    patch height: d = width * height
             width   -- (int>0)    patch width
-            fft_pad -- (boolean)  are the patches zero-padded?  | default: False
+            pad_data -- (boolean)  are the patches zero-padded?  | default: False
 
     Returns (encode, D, diagnostics):
         
@@ -1100,16 +1104,16 @@ def learn_dictionary(X, m,  reg='l1_space',
     ###
     # Configure the encoding regularizer
     if reg == 'l2_group':
-        regularize  = functools.partial(    reg_l2_group,   lam=lam, m=m)
+        regularize  = functools.partial(    reg_l2_group,   alpha=alpha, m=m)
 
     elif reg == 'l1':
-        regularize  = functools.partial(    reg_l1_complex, lam=lam)
+        regularize  = functools.partial(    reg_l1_complex, alpha=alpha)
 
     elif reg == 'l1_space':
-        regularize  = functools.partial(    reg_l1_space,   lam=lam, **kwargs)
+        regularize  = functools.partial(    reg_l1_space,   alpha=alpha, **kwargs)
 
     elif reg == 'lowpass':
-        regularize  = functools.partial(    reg_lowpass,    lam=lam, **kwargs)
+        regularize  = functools.partial(    reg_lowpass,    alpha=alpha, **kwargs)
 
     else:
         raise ValueError('Unknown regularization: %s' % reg)
@@ -1129,7 +1133,7 @@ def learn_dictionary(X, m,  reg='l1_space',
             'd':                X.shape[0] / 2,
             'm':                m,
             'reg':              reg,
-            'lam':              lam,
+            'alpha':            alpha,
             'max_steps':        max_steps,
             'max_admm_steps':   max_admm_steps,
             'batch_size':       batch_size,
@@ -1160,7 +1164,7 @@ def learn_dictionary(X, m,  reg='l1_space',
     # Initialize the dictionary
     D = init_svd(X, m)
     
-    for (T, X_batch) in enumerate(_batches(X, batch_size, max_steps), 1):
+    for (T, X_batch) in enumerate(_batches(X, batch_size, max_steps, shuffle), 1):
 
         ###
         # Encode the data bacth
@@ -1170,11 +1174,12 @@ def learn_dictionary(X, m,  reg='l1_space',
         diagnostics['encoder'].append(A_diags)
         
         error.append(np.mean((D * A - X_batch)**2))
-        print '%4d| [A] MSE=%.3e' % (T, error[-1]),
+        if verbose:
+            print '%4d| [A] MSE=%.3e' % (T, error[-1]),
 
         (StS_new, StX_new)  = _encoding_statistics(A, X_batch)
 
-        alpha = (1.0 - 1.0/T)**BETA
+        gamma = (1.0 - 1.0/T)**BETA
 
         if T == 1:
             # For the first batch, take the encoding statistics as is
@@ -1182,8 +1187,8 @@ def learn_dictionary(X, m,  reg='l1_space',
             StX     = StX_new
         else:
             # All subsequent batches get averaged into to the previous totals
-            StS     = alpha * StS     + (1.0-alpha) * StS_new
-            StX     = alpha * StX     + (1.0-alpha) * StX_new
+            StS     = gamma * StS     + (1.0-gamma) * StS_new
+            StX     = gamma * StX     + (1.0-gamma) * StX_new
 
         ###
         # Optimize the dictionary
@@ -1194,8 +1199,9 @@ def learn_dictionary(X, m,  reg='l1_space',
         diagnostics['dictionary'].append(D_diags)
 
         error.append(np.mean((D * A - X_batch)**2))
-        print '\t| [D] MSE=%.3e' %  error[-1],
-        print '\t| [A-D] %.3e' % (error[-2] - error[-1])
+        if verbose:
+            print '\t| [D] MSE=%.3e' %  error[-1],
+            print '\t| [A-D] %.3e' % (error[-2] - error[-1])
 
         # Rescale the dictionary: this can only help
         D = normalize_dictionary(D)
