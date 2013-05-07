@@ -2,6 +2,7 @@
 # CREATED:2013-05-03 21:57:00 by Brian McFee <brm2132@columbia.edu>
 # sklearn.decomposition container class for CDL 
 
+import numpy as np
 import cdl
 from sklearn.base import BaseEstimator, TransformerMixin
 
@@ -126,25 +127,22 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
 
         h, w, n = X.shape
 
-        # FIXME:  2013-05-03 22:52:30 by Brian McFee <brm2132@columbia.edu>
-        # can we make this more memory-efficient?         
-
         # Fourier transform
         X_new = cdl.patches_to_vectors(X, pad_data=self.pad_data)
 
         # Encode
         X_new = self.encoder_(X_new)
     
-        #AS = A.reshape( (A.shape[0] / M, n * M), order='F')
         # Reshape each activation into its own frame
         X_new = X_new.reshape( (X_new.shape[0] / self.n_atoms, -1), order='F')
 
         # Transform back
-        #AS = CDL.cdl.vectors_to_patches(AS, W, pad_data=pad, real=True)
         X_new = cdl.vectors_to_patches(X_new, w, pad_data=self.pad_data, real=True)
 
+        if self.nonneg:
+            X_new = np.maximum(X_new, 0.0)
+
         # Regroup patches per original frame
-        #AS = AS.reshape( (AS.shape[0], AS.shape[1], AS.shape[2] / n, n), order='F')
         X_new = X_new.reshape( (X_new.shape[0], X_new.shape[1], -1, n), order='F')
         X_new = X_new.swapaxes(3,0).swapaxes(3,2).swapaxes(3,1)
 

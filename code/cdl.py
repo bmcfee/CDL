@@ -342,6 +342,23 @@ def init_svd(X, m):
     Xsamp       = X[:, np.random.randint(0, n, n_sample)]
     U           = scipy.linalg.svd(Xsamp)[0]
     return normalize_dictionary(columns_to_diags(U[:, :m]))
+
+def init_columns(X, m):
+    """Initializes a dictionary with random columns of the data
+
+    Arguments:
+        X   -- (ndarray)    2d-by-n data array
+        m   -- (int>0)      number of basis elements to initialize
+
+    Returns:
+        D   -- (sparse) 2d-by-2dm normalized dictionary
+
+    """
+
+    n           = X.shape[1]
+
+    Xsamp       = X[:, np.random.randint(0, n, m)]
+    return normalize_dictionary(columns_to_diags(Xsamp))
 #---                            ---#
 
 #--- Regularization functions   ---#
@@ -1162,7 +1179,8 @@ def learn_dictionary(X, m,  reg='l1_space',
 
     ###
     # Initialize the dictionary
-    D = init_svd(X, m)
+    #D = init_svd(X, m)
+    D = init_columns(X, m)
     
     for (T, X_batch) in enumerate(_batches(X, batch_size, max_steps, shuffle), 1):
 
