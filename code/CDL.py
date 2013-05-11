@@ -5,6 +5,7 @@
 import numpy as np
 import cdl
 from sklearn.base import BaseEstimator, TransformerMixin
+import functools
 
 class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
 
@@ -108,6 +109,17 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         D                = D.swapaxes(1,2).swapaxes(0,1)
         self.components_ = D
         self.encoder_    = encoder
+        return self
+
+    def set_codebook(self, D):
+        '''Clobber the existing codebook with a new one.'''
+
+        self.components_ = D
+        D = D.swapaxes(0,1).swapaxes(1,2)
+        D = cdl.patches_to_vectors(D, pad_data=self.pad_data)
+        D = cdl.columns_to_diags(D)
+        self.encoder_ = functools.partial(self.encoder_, D=D)
+
         return self
 
     def transform(self, X):
