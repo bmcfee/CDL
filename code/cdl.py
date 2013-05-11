@@ -433,7 +433,8 @@ def reg_l1_space(A, rho, alpha, height=None, width=None, nonneg=False,
     if pad_data:
         # If we have a padded FFT, then width and height should double
         width   = 2 * width
-        height  = 2 * height
+#         height  = 2 * height
+        height  = height
 
     (d2m, n)    = A.shape
     d           = width * height

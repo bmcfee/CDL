@@ -161,27 +161,3 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         X_new = X_new.swapaxes(3,0).swapaxes(3,2).swapaxes(3,1)
 
         return X_new
-
-    def predict(self, A):
-        """Reconstruct data given activations
-
-        Arguments
-        ---------
-            A   -- output of CDL.transform(X)
-
-        Returns
-        -------
-            Xhat -- reconstructed signal
-        """
-
-        n, m, d1, d2 = A.shape
-
-        A = A.swapaxes(1,3).swapaxes(2,3).swapaxes(0,3)
-        A = A.reshape( (A.shape[0], A.shape[1], -1), order='F')
-
-        Ahat = cdl.patches_to_vectors(A, pad_data=self.pad_data)
-        Xhat = self.fft_components_.T * Ahat
-
-        Xhat = cdl.vectors_to_patches(Xhat, d2, pad_data=self.pad_data, real=True)
-        Xhat = Xhat.reshape( (n, d1, d2), order='F')
-        return Xhat
