@@ -104,6 +104,7 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
                                                     verbose     = self.verbose,
                                                     shuffle     = self.shuffle,
                                                     **extra_args)
+        self.fft_components_ = D
         D                = cdl.diags_to_columns(D)
         D                = cdl.vectors_to_patches(D, width, pad_data=self.pad_data)
         D                = D.swapaxes(1,2).swapaxes(0,1)
@@ -118,6 +119,7 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         D = D.swapaxes(0,1).swapaxes(1,2)
         D = cdl.patches_to_vectors(D, pad_data=self.pad_data)
         D = cdl.columns_to_diags(D)
+        self.fft_components_ = D
         self.encoder_ = functools.partial(self.encoder_, D=D)
 
         return self
@@ -159,3 +161,27 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         X_new = X_new.swapaxes(3,0).swapaxes(3,2).swapaxes(3,1)
 
         return X_new
+
+    def predict(self, A):
+        """Reconstruct data given activations
+
+        Arguments
+        ---------
+            A   -- output of CDL.transform(X)
+
+        Returns
+        -------
+            Xhat -- reconstructed signal
+        """
+
+        n, m, d1, d2 = A.shape
+
+        A = A.swapaxes(1,3).swapaxes(2,3).swapaxes(0,3)
+        A = A.reshape( (A.shape[0], A.shape[1], -1), order='F')
+
+        Ahat = cdl.patches_to_vectors(A, pad_data=self.pad_data)
+        Xhat = self.fft_components_.T * Ahat
+
+        Xhat = cdl.vectors_to_patches(Xhat, d2, pad_data=self.pad_data, real=True)
+        Xhat = Xhat.reshape( (n, d1, d2), order='F')
+        return Xhat
