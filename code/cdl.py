@@ -94,7 +94,7 @@ def vectors_to_patches(vectors, width, pad_data=False, real=True):
 
     # Reshape into patches
     if pad_data:
-        height = size / (4 * width)
+        height = size / (2 * 2 * width)
         vectors = vectors.reshape((2 * height, 2 * width, num_samples), 
                                   order='F')
     else:

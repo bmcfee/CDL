@@ -144,20 +144,21 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         # Fourier transform
         X_new = cdl.patches_to_vectors(X, pad_data=self.pad_data)
 
+        # Convert complex2real2
+
         # Encode
         X_new = self.encoder_(X_new)
-    
-        # Reshape each activation into its own frame
-        X_new = X_new.reshape( (X_new.shape[0] / self.n_atoms, -1), order='F')
+        
+        X_new = cdl.real2_to_complex(X_new)
+        X_new = X_new.reshape( (-1, X_new.shape[1] * self.n_atoms), order='F')
+        X_new = cdl.complex_to_real2(X_new)   
 
-        # Transform back
         X_new = cdl.vectors_to_patches(X_new, w, pad_data=self.pad_data, real=True)
+
+        X_new = X_new.reshape( (X_new.shape[0], X_new.shape[1], self.n_atoms, n), order='F')
+        X_new = X_new.swapaxes(3,0).swapaxes(3,2).swapaxes(3,1)
 
         if self.nonneg:
             X_new = np.maximum(X_new, 0.0)
-
-        # Regroup patches per original frame
-        X_new = X_new.reshape( (X_new.shape[0], X_new.shape[1], -1, n), order='F')
-        X_new = X_new.swapaxes(3,0).swapaxes(3,2).swapaxes(3,1)
 
         return X_new
