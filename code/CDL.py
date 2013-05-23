@@ -3,7 +3,7 @@
 # sklearn.decomposition container class for CDL 
 
 import numpy as np
-import cdl
+import _cdl
 from sklearn.base import BaseEstimator, TransformerMixin
 import functools
 
@@ -93,9 +93,9 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         X = X.swapaxes(0,1).swapaxes(1,2)
 
         # X is now h-*-w-by-n
-        X = cdl.patches_to_vectors(X, pad_data=self.pad_data)
+        X = _cdl.patches_to_vectors(X, pad_data=self.pad_data)
 
-        encoder, D, diagnostics = cdl.learn_dictionary(X, self.n_atoms,
+        encoder, D, diagnostics = _cdl.learn_dictionary(X, self.n_atoms,
                                                     reg         = self.penalty,
                                                     alpha       = self.alpha,
                                                     max_steps   = self.n_iter,
@@ -105,8 +105,8 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
                                                     shuffle     = self.shuffle,
                                                     **extra_args)
         self.fft_components_ = D
-        D                = cdl.diags_to_columns(D)
-        D                = cdl.vectors_to_patches(D, width, pad_data=self.pad_data)
+        D                = _cdl.diags_to_columns(D)
+        D                = _cdl.vectors_to_patches(D, width, pad_data=self.pad_data)
         D                = D.swapaxes(1,2).swapaxes(0,1)
         self.components_ = D
         self.encoder_    = encoder
@@ -117,8 +117,8 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
 
         self.components_ = D
         D = D.swapaxes(0,1).swapaxes(1,2)
-        D = cdl.patches_to_vectors(D, pad_data=self.pad_data)
-        D = cdl.columns_to_diags(D)
+        D = _cdl.patches_to_vectors(D, pad_data=self.pad_data)
+        D = _cdl.columns_to_diags(D)
         self.fft_components_ = D
         self.encoder_ = functools.partial(self.encoder_, D=D)
 
@@ -142,18 +142,18 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         h, w, n = X.shape
 
         # Fourier transform
-        X_new = cdl.patches_to_vectors(X, pad_data=self.pad_data)
+        X_new = _cdl.patches_to_vectors(X, pad_data=self.pad_data)
 
         # Convert complex2real2
 
         # Encode
         X_new = self.encoder_(X_new)
         
-        X_new = cdl.real2_to_complex(X_new)
+        X_new = _cdl.real2_to_complex(X_new)
         X_new = X_new.reshape( (-1, X_new.shape[1] * self.n_atoms), order='F')
-        X_new = cdl.complex_to_real2(X_new)   
+        X_new = _cdl.complex_to_real2(X_new)   
 
-        X_new = cdl.vectors_to_patches(X_new, w, pad_data=self.pad_data, real=True)
+        X_new = _cdl.vectors_to_patches(X_new, w, pad_data=self.pad_data, real=True)
 
         X_new = X_new.reshape( (X_new.shape[0], X_new.shape[1], self.n_atoms, n), order='F')
         X_new = X_new.swapaxes(3,0).swapaxes(3,2).swapaxes(3,1)

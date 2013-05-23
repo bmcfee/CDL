@@ -1,7 +1,7 @@
 # CREATED:2013-03-10 10:59:10 by Brian McFee <brm2132@columbia.edu>
 # unit tests for convolutional dictionary learning 
 
-import cdl
+import _cdl
 import numpy
 import numpy.fft
 import functools
@@ -16,7 +16,7 @@ def test_complex_to_real2():
 
     def __test(d, n):
         X_cplx  = numpy.random.randn(d, n) + 1.j * numpy.random.randn(d, n)
-        X_real2 = cdl.complex_to_real2(X_cplx)
+        X_real2 = _cdl.complex_to_real2(X_cplx)
 
         # Verify shape match
         assert (X_cplx.shape[0] * 2  == X_real2.shape[0] and
@@ -39,7 +39,7 @@ def test_real2_to_complex():
 
     def __test(d, n):
         X_real2 = numpy.random.randn(2 * d, n)
-        X_cplx  = cdl.real2_to_complex(X_real2)
+        X_cplx  = _cdl.real2_to_complex(X_real2)
 
         # Verify shape match
         assert (X_cplx.shape[0] * 2  == X_real2.shape[0] and
@@ -67,7 +67,7 @@ def test_columns_to_diags():
         B = X[d:, :]
 
         # Convert to its diagonal-block form
-        Q = cdl.columns_to_diags(X)
+        Q = _cdl.columns_to_diags(X)
         
         for k in range(m):
             for j in range(d):
@@ -93,8 +93,8 @@ def test_diags_to_columns():
 
     def __test(d, m):
         X = numpy.random.randn(2 * d, m)
-        Q = cdl.columns_to_diags(X)
-        X_back  = cdl.diags_to_columns(Q)
+        Q = _cdl.columns_to_diags(X)
+        X_back  = _cdl.diags_to_columns(Q)
         assert EQ(X, X_back)
         pass
 
@@ -115,7 +115,7 @@ def test_columns_to_vector():
         B = X[d:, :]
 
         # Vectorize
-        V = cdl.columns_to_vector(X)
+        V = _cdl.columns_to_vector(X)
 
         # Equality-test
         # A[:,k] => V[d * k : d * (k+1)]
@@ -138,8 +138,8 @@ def test_vector_to_columns():
 
     def __test(d, m):
         X = numpy.random.randn(2 * d, m)
-        V = cdl.columns_to_vector(X)
-        X_back = cdl.vector_to_columns(V, m)
+        V = _cdl.columns_to_vector(X)
+        X_back = _cdl.vector_to_columns(V, m)
 
         assert EQ(X, X_back)
         pass
@@ -156,13 +156,13 @@ def test_normalize_dictionary():
         X       = numpy.random.randn(2 * d, m)
 
         # Convert to diagonals
-        Xdiags  = cdl.columns_to_diags(X)
+        Xdiags  = _cdl.columns_to_diags(X)
 
         # Normalize
-        N_Xdiag = cdl.normalize_dictionary(Xdiags)
+        N_Xdiag = _cdl.normalize_dictionary(Xdiags)
 
         # Convert back
-        N_X     = cdl.diags_to_columns(N_Xdiag)
+        N_X     = _cdl.diags_to_columns(N_Xdiag)
 
         # 1. verify unit norms
         norms   = numpy.sum(N_X**2, axis=0)**0.5
@@ -192,7 +192,7 @@ def test_proj_l2_ball():
         X       = numpy.random.randn(2 * d, m)
 
         # Normalize the dictionary and convert back to columns
-        X_norm  = cdl.diags_to_columns(cdl.normalize_dictionary(cdl.columns_to_diags(X)))
+        X_norm  = _cdl.diags_to_columns(_cdl.normalize_dictionary(_cdl.columns_to_diags(X)))
 
         
         # Rescale the normalized dictionary to have some inside, some outside
@@ -200,13 +200,13 @@ def test_proj_l2_ball():
         X_scale = X_norm * R
 
         # Vectorize
-        V_scale = cdl.columns_to_vector(X_scale)
+        V_scale = _cdl.columns_to_vector(X_scale)
 
         # Project
-        V_proj  = cdl.proj_l2_ball(V_scale, m)
+        V_proj  = _cdl.proj_l2_ball(V_scale, m)
 
         # Rearrange the projected matrix into columns
-        X_proj  = cdl.vector_to_columns(V_proj, m)
+        X_proj  = _cdl.vector_to_columns(V_proj, m)
 
 
         # Compute norms
@@ -249,13 +249,13 @@ def test_reg_l1_real():
             pass
 
         # First, test without pre-allocation
-        Xout = cdl.reg_l1_real(X, rho, alpha, nonneg)
+        Xout = _cdl.reg_l1_real(X, rho, alpha, nonneg)
 
         assert EQ(Xout, Xshrunk)
 
         # Now test with pre-allocation
         Xout_pre = numpy.zeros_like(X, order='A')
-        cdl.reg_l1_real(X, rho, alpha, nonneg, Xout_pre)
+        _cdl.reg_l1_real(X, rho, alpha, nonneg, Xout_pre)
 
         assert EQ(Xout_pre, Xshrunk)
         pass
@@ -276,7 +276,7 @@ def test_reg_l1_complex():
         X = numpy.random.randn(2 * d, n) * alpha / rho
 
         # Compute magnitudes of complex values
-        X_cplx  = cdl.real2_to_complex(X)
+        X_cplx  = _cdl.real2_to_complex(X)
         X_abs   = numpy.abs(X_cplx)
 
         # Compute shrinkage on X
@@ -294,13 +294,13 @@ def test_reg_l1_complex():
         Xshrunk = X * S
 
         # First, test without pre-allocation
-        Xout = cdl.reg_l1_complex(X, rho, alpha)
+        Xout = _cdl.reg_l1_complex(X, rho, alpha)
 
         assert EQ(Xout, Xshrunk, rtol=1e-3, atol=1e-6)
 
         # Now test with pre-allocation
         Xout_pre = numpy.zeros_like(X, order='A')
-        cdl.reg_l1_complex(X, rho, alpha, Xout_pre)
+        _cdl.reg_l1_complex(X, rho, alpha, Xout_pre)
 
         assert EQ(Xout_pre, Xshrunk, rtol=1e-3, atol=1e-6)
         pass
@@ -321,7 +321,7 @@ def test_reg_l2_group():
         X = numpy.random.randn(2 * d * m, n) * alpha / rho
 
         # Compute the properly shrunk matrix
-        X_cplx  = cdl.real2_to_complex(X)
+        X_cplx  = _cdl.real2_to_complex(X)
         S       = (X_cplx.conj() * X_cplx).real
 
         X_norms = numpy.zeros((m, n))
@@ -343,13 +343,13 @@ def test_reg_l2_group():
             pass
 
         # First, test without pre-allocation
-        Xout = cdl.reg_l2_group(X, rho, alpha, m)
+        Xout = _cdl.reg_l2_group(X, rho, alpha, m)
         assert EQ(Xout, Xshrunk)
 
         # Now test with pre-allocation
 
         Xout_pre = numpy.zeros_like(X, order='A')
-        cdl.reg_l2_group(X, rho, alpha, m, Xout_pre)
+        _cdl.reg_l2_group(X, rho, alpha, m, Xout_pre)
 
         assert EQ(Xout_pre, Xshrunk)
         pass
@@ -381,13 +381,13 @@ def test_reg_l1_space():
         X_cols  = X_freq.reshape((h * w * m, n), order='F')
 
         # Split real and complex
-        X       = cdl.complex_to_real2(X_cols)
+        X       = _cdl.complex_to_real2(X_cols)
 
         # First try without pre-allocation
-        Xout    = cdl.reg_l1_space(X, rho, alpha, width=w, height=h, nonneg=nonneg)
+        Xout    = _cdl.reg_l1_space(X, rho, alpha, width=w, height=h, nonneg=nonneg)
 
         # Convert back to complex
-        Xout_cplx = cdl.real2_to_complex(Xout)
+        Xout_cplx = _cdl.real2_to_complex(Xout)
 
         # reshape back into four dimensions
         Xout_freq = Xout_cplx.reshape((h, w, m, n), order='F')
@@ -400,10 +400,10 @@ def test_reg_l1_space():
 
         # Now do it again with pre-allocation
         Xout_pre = numpy.empty_like(X, order='A')
-        cdl.reg_l1_space(X, rho, alpha, width=w, height=h, nonneg=nonneg, Xout=Xout_pre)
+        _cdl.reg_l1_space(X, rho, alpha, width=w, height=h, nonneg=nonneg, Xout=Xout_pre)
 
         # Convert back to complex
-        Xout_cplx_pre = cdl.real2_to_complex(Xout_pre)
+        Xout_cplx_pre = _cdl.real2_to_complex(Xout_pre)
 
         # reshape back into four dimensions
         Xout_freq_pre = Xout_cplx_pre.reshape((h, w, m, n), order='F')
