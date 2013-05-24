@@ -64,6 +64,7 @@
                     \raisebox{-0.25ex}{$\m@th\cdot$}}%
                     =}
 
+\DeclareMathOperator{\prox}{prox}
 \DeclareMathOperator{\diagb}{diagb}
 \DeclareMathOperator{\vectorize}{vec}
 \DeclareMathOperator*{\gmean}{gmean}
@@ -93,4 +94,7 @@
 \renewcommand{\algorithmiccomment}[1]{\hfill\eqparbox{COMMENT}{$\sslash$ #1}}
 
 
-\newtheorem{lemma}{Lemma}
+\newtheorem{lemma}{Lemma}[section]
+\newtheorem{theorem}{Theorem}[section]
+
+\newcommand{\bn}[1]{\textcolor{blue}{BRM NOTE:\@#1}}

@@ -6,7 +6,7 @@
 \usepackage{brian}
 \usepackage{booktabs}
 \usepackage{graphicx}
-% \usepackage{microtype}
+\usepackage{microtype}
 \usepackage[sort]{natbib}
 %\documentstyle[nips13submit_09,times,art10]{article} % For LaTeX 2.09
 
@@ -45,6 +45,15 @@ We make convolutional coding faster.
 
 \section{Introduction}
 \cite{mairal2010}
+% TODO:   2013-05-24 18:26:56 by Brian McFee <brm2132@columbia.edu>
+% why convolutional coding?
+%   shift-invariance, robustness against windowing/offset effects
+%   fixed codebooks tend to be overcomplete, learn the same basis at multiple shifts
+%       which is wasteful
+%   convolutional coding lets us use a smaller codebook
+%   positions of activations can be semantically meaningful, eg in music transcription
+%       cite klapuri2012
+
 
 \subsection{Related work}
 
@@ -53,6 +62,8 @@ $\F:\R^d\rightarrow\C^d$ will denote the discrete Fourier transform, and $*$ wil
 convolution.
 Time-domain signals will be represented by lower-case letters, \eg, $x \in \R^d$, while
 frequency-domain representations will be denoted by capitals, $\F\{x\} = X \in \C^d$.
+For a vector $u$, $\diag(u)$ will denote the square, diagonal matrix $U$ such that 
+$U_{ii} = u_i$.
 
 \section{Convolutional coding}
 \label{sec:convcode}
@@ -66,7 +77,7 @@ Because this parameterization increases the dimensionality of the representation
 to $md$, we also desire that each activation function $a_k$ be sparse.  Formally, this is 
 achieved by solving the following optimization problem:
 \begin{align}
-a(x) &\defeq \argmin_{\{a_k\}} \frac{1}{2} \left\|x - \sum_{k=1}^m d_k * a_k\right\|_2^2 +
+a(x) &\defeq \argmin_{\{a_k\}} \frac{1}{2} \left\|x - \sum_{k=1}^m d_k * a_k\right\|^2 +
 \lambda \sum_{k=1}^m \omega(a_k), \label{eq:sisc}
 \end{align}
 where $\omega$ is a convex, sparsity-promoting regularization function (\eg, the 
@@ -74,7 +85,7 @@ $\ell_1$-norm), and $\lambda > 0 $ is a parameter to balance regularization agai
 reconstruction accuracy. 
 
 Because convolution is a linear operation, \eqref{eq:sisc} is convex in $a_k$.  
-However, direct optimization is difficult.
+However, direct optimization is difficult.\bn{MORE}
 
 \subsection{Coding in the frequency domain}
 By applying Parseval's theorem and the convolution theorem,\footnote{We assume circular
@@ -85,9 +96,9 @@ presentation, we assume the symmetrically normalized form of the Fourier transfo
 so that $\|x\| = \|\F\{x\}\|$. In general, a normalization constant may be included, 
 or absorbed into the regularization parameter $\lambda$.}
 \begin{align}
-\left\|x - \sum_k d_k * a_k\right\|_2^2 &= \left\|\F\left\{x - \sum_k d_k *
-a_k\right\}\right\|_2^2
-= \left\| X - \sum_k D_k \circ A_k\right\|_2^2,\label{eq:fourier}
+\left\|x - \sum_k d_k * a_k\right\|^2 &= \left\|\F\left\{x - \sum_k d_k *
+a_k\right\}\right\|^2
+= \left\| X - \sum_k D_k \circ A_k\right\|^2,\label{eq:fourier}
 \end{align}
 where the last equality follows by linearity of the Fourier transform, and $\circ$
 denotes the Hadamard product: ${[u\circ v]}_i \defeq u_i v_i$.
@@ -97,30 +108,133 @@ least-squares objective, it can be put into a more familiar form via the followi
 lemma.
 \begin{lemma}
 Let $\{D_1, D_2, \dots, D_m\}, \{A_1, A_2, \dots, A_m\} \subset \C^d$.  
-Then there exist matrices ${U \in \C^{d\times dm}}$, ${V \in \C^{dm}}$ such that 
-${UV = \sum_{k=1}^m D_k \circ A_k}$.
+Then there exist ${\widehat{D} \in \C^{d\times dm}}$ and ${\vec{A} \in \C^{dm}}$ such that 
+${\widehat{D}\vec{A} = \sum_{k=1}^m D_k \circ A_k}$.\label{lemma:hadamard}
 \end{lemma}
 \begin{proof}
 $D_k$ and $A_k$ can be rearranged as follows:
 \begin{align*}
-U &\defeq \diagb(\{D_k\}) = \left[\diag(D_1), \diag(D_2), \dots, \diag(D_m)\right] \in \C^{d\times dm}\\
-V &\defeq \vectorize(\{A_k\}) = \left[A_1\trans, A_2\trans, \dots,
+\widehat{D} &\defeq \left[\diag(D_1),\; \diag(D_2),\; \dots,\; \diag(D_m)\right] \in \C^{d\times dm}\\
+\vec{A} &\defeq \left[A_1\trans, A_2\trans, \dots,
 A_m\trans\right]\trans \in \C^{dm}\\
-\Rightarrow \quad {[UV]}_i &= \sum_k U_{ik} V_i = \sum_k [D_k]_i [A_k]_i = \sum_k [D_k \circ A_k]_i.
+\Rightarrow \quad {\left[\widehat{D}\vec{A}\right]}_i &= \sum_\ell \widehat{D}_{i\ell}
+\vec{A}_\ell = \sum_k {[D_k]}_i {[A_k]}_i = \sum_k
+{[D_k \circ A_k]}_i.
 \end{align*}
 \end{proof}
 
+\Cref{lemma:hadamard} allows us to interchange the Hadamard product in
+\eqref{eq:fourier} with a matrix product, so that 
+$\left\|x - \sum_k d_k * a_k\right\|^2 =  \left\|X - \widehat{D}\vec{A}\right\|^2$,
+but we are left with a least-squares objective function parameterized by the complex-valued 
+vector $\vec{A}$. To facilitate the use of standard optimization techniques to solve for
+$\vec{A}$, we separate out the real and imaginary components as follows:
+\begin{equation}
+X \mapsto \left[\begin{array}{r}\Re X \\ \Im X\end{array}\right] \in \R^{2d},
+\quad\quad \widehat{D} \mapsto \left[\begin{array}{rr}\Re \widehat{D} & - \Im \widehat{D}\\
+\Im \widehat{D} & \Re \widehat{D}\end{array}\right] \in \R^{2d\times 2dm},
+\quad\quad \vec{A} \mapsto \left[\begin{array}{r}\Re \vec{A} \\ \Im \vec{A}\end{array}\right]
+\in \R^{2dm}.\label{eq:realized}
+\end{equation}
+With a slight abuse of notation, we can equivalently solve the original sparse
+convolutional coding as a least-squares problem:
+\begin{equation}
+\min_{A \in \R^{2dm}} \|X - \widehat{D}A\|^2 + \Omega(A),\label{eq:realvalued}
+\end{equation}
+where $A_k$ corresponds to the sub-vector of $A$ associated with the $k$th codewode, and 
+$\Omega$ is a frequency-domain parameterization of the regularization function $\omega$.
+From an optimal $A$, each activation function $a_k$ can be 
+recovered by the inverse transform of the combined real and imaginary components
+corresponding to $A_k$.
 
 \subsection{ADMM solver}
-\cite{boyd2011}
+\label{sec:solver}
+At a first glance, \eqref{eq:realvalued} may seem no easier to solve than the original
+formulation of \eqref{eq:sisc}, especially since in many cases, $\Omega$ may be most
+naturally parameterized in the time domain.  We therefore apply the alternating
+direction method of multipliers (ADMM) technique to separate the regularization and
+reconstruction terms~\cite{boyd2011}.  This leads to the following equivalent
+formulation:
+\begin{equation}
+\min_{A, Z} \frac{1}{2}\left\|X - \widehat{D}A\right\|^2 + \Omega(Z)
+\quad\quad \suchthat\quad A - Z = 0.\label{eq:admm}
+\end{equation}
 
-\subsection{Time-domain regularization}
+Forming the (scaled-form) augmented Lagrangian for \eqref{eq:admm} with scaling
+parameter $\rho > 0 $ yields
+\[
+\Ell_\rho(A,Z,W) = \frac{1}{2}\left\|X - \widehat{D}A\right\|^2 + \Omega(Z) +
+\frac{\rho}{2}\|A - Z + W\|^2.
+\]
+Optimizing \eqref{eq:admm} then consists of iterating the following three steps until
+convergence:
+\begin{enumerate}
+\item $A^{t+1} \leftarrow \argmin_A \Ell_\rho(A, Z^t, W^t) = \argmin_A \frac{1}{2}
+\left\|X - \widehat{D}A\right\|^2 + \frac{\rho}{2}\left\|A - Z^t + W^t\right\|^2$,
+\item $Z^{t+1} \leftarrow \argmin_Z \Ell_\rho(A^{t+1}, Z, W^t) =
+\prox_{\rho^{-1}\Omega}\left(A^{t+1} + W^t \right)$,
+\item $W^{t+1} \leftarrow W^t + A^{t+1} - Z^{t+1}$.
+\end{enumerate}
+
+Just as in the ADMM formulation of LASSO~\cite[chapter 6]{boyd2011}, the $A$ update takes 
+the form of a ridge regression.  Setting the gradient to zero yields the update
+equation:
+\begin{align}
+\zero = \nabla_A \Ell_\rho(A, Z^t, W^t) &= -\widehat{D}\trans \left(X - \widehat{D}A\right)
++ \rho(A - Z^t + W^t)\notag\\
+\Rightarrow \quad A^{t+1} &= {\left(\widehat{D}\trans \widehat{D} + \rho I\right)}^{-1}
+\left(\widehat{D}\trans X + \rho \left(Z^t - W^t\right)\right).\label{eq:a-update}
+\end{align}
+Now, observe that the inverted matrix is the sum of a $2dm\times 2dm$ diagonal matrix 
+$\rho I$ and product of low-rank matrices $(\widehat{D}\trans\widehat{D})$.  
+Applying the matrix inversion lemma yields
+\begin{equation}
+{\left(\widehat{D}\trans \widehat{D} + \rho I\right)}^{-1} = \rho^{-1} I - \rho^{-2} \widehat{D}\trans
+{\left(I + \rho^{-1} \widehat{D}\widehat{D}\trans \right)}^{-1}
+\widehat{D}.\label{eq:inversion}
+\end{equation}
+This alternative formulation superficially allows us to invert a $2d\times 2d$
+matrix rather than the original $2dm\times 2dm$ matrix.  However, to see the full
+benefits of this formulation, we will require the following results.
+
+\begin{lemma}
+Let ${u, v \in \R^{d\times m}}$ be any matrices, and let ${\widehat{u} \defeq
+[\diag(u_1),\dots,\diag(u_m)] \in \R^{d\times dm}}$ denote the 
+matrix of diagonals formed from the columns of $u$ as in \cref{lemma:hadamard} 
+(and analogously for $v$).  Then $\widehat{u}\widehat{v}\trans = I \circ (uv\trans)$.
+\label{lemma:product}
+\end{lemma}
+
+\begin{theorem}
+Let $\widehat{D} \in \R^{2d\times 2dm}$ be as defined in \eqref{eq:realized}.  Then
+$\widehat{D}\widehat{D}\trans \in \R^{2d\times 2d}$ is diagonal.
+\end{theorem}
+\begin{proof}
+Let $U$ and $V$ denote the blocks of $\widehat{D}$ corresponding to the
+real and imaginary components.  Then,
+\begin{align*}
+\widehat{D}\widehat{D}\trans = \left[\begin{array}{rr}U & -V\\ V & U\end{array}\right]
+\left[\begin{array}{rr} U\trans & V\trans\\ -V\trans & U\trans\end{array}\right]
+&= \left[\begin{array}{rr} UU\trans + VV\trans & UV\trans - VU\trans \\ VU\trans -
+UV\trans & UU\trans + VV\trans\end{array} \right]\\
+&= \left[\begin{array}{rr}UU\trans + VV\trans & 0 \\ 0 & UU\trans + VV\trans\end{array}
+\right],
+\end{align*}
+where the last equality follows by symmetry of $\widehat{D}\widehat{D}\trans$, so that
+$UV\trans = VU\trans$.  By \cref{lemma:product}, both $UU\trans$ and $VV\trans$ are 
+diagonal, as is their sum.  So $\widehat{D}\widehat{D}\trans$ is diagonal as well.
+\end{proof}
+
+
+\subsection{Z-step: time-domain regularization}
 
 
 \section{Dictionary learning}
 
 \section{Experiments}
 \section{Conclusion}
+\appendix
+\section{Deferred proofs from \Cref{sec:solver}}
 
 \bibliographystyle{plain}
 \bibliography{refs}
