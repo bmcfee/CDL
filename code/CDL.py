@@ -6,6 +6,7 @@ import numpy as np
 import _cdl
 from sklearn.base import BaseEstimator, TransformerMixin
 import functools
+import random
 
 class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
 
@@ -67,6 +68,47 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         self.verbose        = verbose
         pass
 
+    def data_generator(self, X_full):
+        '''Make a CDL data generator from an input array
+        
+        Arguments
+        ---------
+            X_full      --  (ndarray) n-by-h-by-w data array
+
+        Returns
+        -------
+            batch_gen   --  (generator) batches of CDL-transformed input data
+                                        the generator will loop infinitely
+        '''
+
+
+        # 1. initialize the RNG
+        if type(self.random_state) is int:
+            random.seed(self.random_state)
+        elif self.random_state is not None:
+            random.setstate(self.random_state)
+
+        n = X_full.shape[0]
+
+        indices = range(n)
+
+        while True:
+            if self.shuffle:
+                random.shuffle(indices)
+
+            for i in range(0, n, self.chunk_size):
+                if i + self.chunk_size > n:
+                    break
+
+                X = X_full[i:i+self.chunk_size]
+
+                # Swap the axes around
+                X = X.swapaxes(0,1).swapaxes(1,2)
+
+                # X is now h-*-w-by-n
+                yield _cdl.patches_to_vectors(X, pad_data=self.pad_data)
+
+
     def fit(self, X):
         '''Fit the model to the data in X.
 
@@ -89,21 +131,16 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
             extra_args['pad_data']  = self.pad_data
             extra_args['nonneg']    = self.nonneg
 
-        # Swap the axes around
-        X = X.swapaxes(0,1).swapaxes(1,2)
 
-        # X is now h-*-w-by-n
-        X = _cdl.patches_to_vectors(X, pad_data=self.pad_data)
+        encoder, D, diagnostics = _cdl.learn_dictionary(
+                                        self.data_generator(X),
+                                        self.n_atoms,
+                                        reg         = self.penalty,
+                                        alpha       = self.alpha,
+                                        max_steps   = self.n_iter,
+                                        verbose     = self.verbose,
+                                        **extra_args)
 
-        encoder, D, diagnostics = _cdl.learn_dictionary(X, self.n_atoms,
-                                                    reg         = self.penalty,
-                                                    alpha       = self.alpha,
-                                                    max_steps   = self.n_iter,
-                                                    n_threads   = self.n_jobs,
-                                                    batch_size  = self.chunk_size,
-                                                    verbose     = self.verbose,
-                                                    shuffle     = self.shuffle,
-                                                    **extra_args)
         self.fft_components_ = D
         D                = _cdl.diags_to_columns(D)
         D                = _cdl.vectors_to_patches(D, width, pad_data=self.pad_data)

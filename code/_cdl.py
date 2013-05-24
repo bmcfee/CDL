@@ -323,31 +323,11 @@ def pool(A, depth_h=0, depth_w=0, agg=np.sum, absval=True):
 
 
 #--- Codebook initialization    ---#
-def init_svd(X, m):
-    """Initializes a dictionary with (approximate) left-singular vectors
-
-    Arguments:
-        X   --  (ndarray)   2d-by-n data array
-        m   --  (int>0)     number of basis elements to initialize
-
-    Returns:
-        D   --  (sparse)    2d-by-2dm normalized dictionary
-
-    Note: the SVD is computed from a subsample of max(n, m**2) columns from X
-
-    """
-    # Draw a subsample
-    n           = X.shape[1]
-    n_sample    = min(n, m**2)
-    Xsamp       = X[:, np.random.randint(0, n, n_sample)]
-    U           = scipy.linalg.svd(Xsamp)[0]
-    return normalize_dictionary(columns_to_diags(U[:, :m]))
-
 def init_columns(X, m):
     """Initializes a dictionary with random columns of the data
 
     Arguments:
-        X   -- (ndarray)    2d-by-n data array
+        X   -- (generator)    2d-by-n data generator
         m   -- (int>0)      number of basis elements to initialize
 
     Returns:
@@ -355,10 +335,19 @@ def init_columns(X, m):
 
     """
 
-    n           = X.shape[1]
+    Xsamp = None
 
-    Xsamp       = X[:, np.random.randint(0, n, m)]
-    return normalize_dictionary(columns_to_diags(Xsamp))
+    for cols in X:
+
+        if Xsamp is None:
+            Xsamp = cols
+        else:
+            Xsamp = np.hstack((Xsamp, cols))
+
+        if Xsamp.shape[1] >= m:
+            break
+
+    return normalize_dictionary(columns_to_diags(Xsamp[:,:m]))
 #---                            ---#
 
 #--- Regularization functions   ---#
@@ -433,8 +422,7 @@ def reg_l1_space(A, rho, alpha, height=None, width=None, nonneg=False,
     if pad_data:
         # If we have a padded FFT, then width and height should double
         width   = 2 * width
-#         height  = 2 * height
-        height  = height
+        height  = 2 * height
 
     (d2m, n)    = A.shape
     d           = width * height
@@ -809,8 +797,8 @@ def _encoder(X, D, reg, max_iter=200, output_diagnostics=True):
         return Z
 
 
-def parallel_encoder(X, D, reg, n_threads=4, 
-                                max_iter=200, 
+def parallel_encoder(X, D, reg, n_jobs=1, 
+                                max_iter=100, 
                                 output_diagnostics=False):
     """Parallel encoder
 
@@ -821,7 +809,7 @@ def parallel_encoder(X, D, reg, n_threads=4,
                     
                     reg = functools.partial(CDL.reg_l2_group, alpha=0.5, m=num_codewords)
 
-      n_threads -- (int>0)      number of parallel threads      | default: 4
+      n_jobs -- (int>0)      number of parallel threads      | default: 4
       max_iter  -- (int>0)      maximum number of steps         | default: 200
 
     Returns:
@@ -831,11 +819,11 @@ def parallel_encoder(X, D, reg, n_threads=4,
     n   = X.shape[1]
     dm  = D.shape[1]
 
-    step = n / n_threads
+    step = n / n_jobs
 
     # Punt to the local encoder if we're single-threaded or don't have enough 
     # data to distrubute
-    if n_threads == 1 or step == 0:
+    if n_jobs == 1 or step == 0:
         return _encoder(X, D, reg, 
                          max_iter=max_iter, 
                          output_diagnostics=output_diagnostics)
@@ -872,7 +860,7 @@ def parallel_encoder(X, D, reg, n_threads=4,
         num_queue += 1
 
     # Launch encoders
-    for i in range(n_threads):
+    for i in range(n_jobs):
         mp.Process(target=_consumer, args=(input_queue, output_queue)).start()
 
     # We're done writing
@@ -1035,44 +1023,16 @@ def dictionary(StS, StX, m, max_iter=200, Dinitial=None):
 #---                            ---#
 
 #--- Alternating minimization   ---#
-def _batches(X, batch_size, max_steps, shuffle):
-    """Mini-batch generator
-
-    Arguments:
-      X             --  (ndarray)   2d-by-n data matrix
-      batch_size    --  (int>0)     number of points per btach
-      max_steps     --  (int>0)     maximum number of batches to yield
-      shuffle       --  (bool)      shuffle between batches
-    Yields:
-      Xbatch        --  (ndarray)   2d-by-batch_size random column sample of X
-
-    Note: if batch_size == n, then Xbatch = X is always yielded
-
-    Note: per-batch sampling is done with replacement
-    """
-    n = X.shape[1]
-
-    for _ in xrange(max_steps):
-        # Sample a random subset of columns (with replacement)
-        if batch_size == n:
-            yield X
-        else:
-            yield X[:, np.random.randint(0, n, batch_size)]
-
-
 def learn_dictionary(X, m,  reg='l1_space', 
                             alpha=1e-1, 
                             max_steps=20, 
-                            max_admm_steps=200, 
-                            n_threads=1, 
-                            batch_size=64, 
+                            max_admm_steps=100, 
                             verbose=False,
-                            shuffle=True,
                             **kwargs):
     """Alternating minimization to learn a convolutional dictionary
 
     Arguments:
-      X             -- (ndarray) 2d-by-n.  Each column is the fourier transform
+      X             -- (generator) 2d-by-n.  Each column is the fourier transform
                                            of an example point, and the 
                                            real//imaginary components have been
                                            separated by complex_to_real2().
@@ -1086,10 +1046,6 @@ def learn_dictionary(X, m,  reg='l1_space',
 
       max_steps     -- (int>0)  number of alternating minimization steps
       max_admm_steps-- (int>0)  number of steps for the internal optimizer
-      n_threads     -- (int>0)  number of encoder threads       | default: 1
-      batch_size    -- (int>0)  number of points per step       | default: 64
-                                specify None to use all of X
-      shuffle       -- (bool)   shuffle data between batches
       verbose       -- (bool)   show training progress
 
       **kwargs      --  Additional keyword arguments to regularizers:
@@ -1109,9 +1065,6 @@ def learn_dictionary(X, m,  reg='l1_space',
       diagnostics   -- (dict)     report of the learning algorithm
 
     """
-
-    n = X.shape[1]
-
 
     # TODO:   2013-03-08 08:35:57 by Brian McFee <brm2132@columbia.edu>
     #   supervised regularization should be compatible with all other regs
@@ -1137,24 +1090,21 @@ def learn_dictionary(X, m,  reg='l1_space',
         raise ValueError('Unknown regularization: %s' % reg)
 
 
-    # Configure online updates
-    if batch_size is None or batch_size > n:
-        batch_size = n
-
     ###
+    # Initialize the dictionary
+    D = init_columns(X, m)
+    
     # Reset the diagnostics output
     diagnostics   = {
         'encoder':          [],
         'dictionary':       [],
         'parameters':       {
-            'n':                X.shape[1],
-            'd':                X.shape[0] / 2,
+            'd':                D.shape[0] / 2,
             'm':                m,
             'reg':              reg,
             'alpha':            alpha,
             'max_steps':        max_steps,
             'max_admm_steps':   max_admm_steps,
-            'batch_size':       batch_size,
             'auxiliary':        kwargs
         },
         'globals':  {
@@ -1173,17 +1123,12 @@ def learn_dictionary(X, m,  reg='l1_space',
     ###
     # Configure the encoder
     local_encoder = functools.partial(parallel_encoder, 
-                                      n_threads=n_threads,
+                                      n_jobs=1,
                                       output_diagnostics=True)
 
     error   = []
 
-    ###
-    # Initialize the dictionary
-    #D = init_svd(X, m)
-    D = init_columns(X, m)
-    
-    for (T, X_batch) in enumerate(_batches(X, batch_size, max_steps, shuffle), 1):
+    for (T, X_batch) in enumerate(X, 1):
 
         ###
         # Encode the data bacth
@@ -1225,12 +1170,14 @@ def learn_dictionary(X, m,  reg='l1_space',
         # Rescale the dictionary: this can only help
         D = normalize_dictionary(D)
 
+        if T >= max_steps:
+            break
+
 
     diagnostics['error'] = np.array(error)
 
     # Package up the learned encoder function for future use
     my_encoder = functools.partial(parallel_encoder, 
-                                   n_threads=n_threads, 
                                    D=D, 
                                    reg=regularize, 
                                    max_iter=max_admm_steps, 
