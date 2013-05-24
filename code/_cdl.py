@@ -1120,11 +1120,6 @@ def learn_dictionary(X, m,  reg='l1_space',
         }
     }
 
-    ###
-    # Configure the encoder
-    local_encoder = functools.partial(parallel_encoder, 
-                                      n_jobs=1,
-                                      output_diagnostics=True)
 
     error   = []
 
@@ -1132,8 +1127,10 @@ def learn_dictionary(X, m,  reg='l1_space',
 
         ###
         # Encode the data bacth
-        (A, A_diags) = local_encoder(X_batch, D, regularize, 
-                                     max_iter=max_admm_steps)
+        (A, A_diags) = _encoder(X_batch, D, 
+                                regularize, 
+                                max_iter=max_admm_steps,
+                                output_diagnostics=True)
 
         diagnostics['encoder'].append(A_diags)
         
@@ -1177,7 +1174,7 @@ def learn_dictionary(X, m,  reg='l1_space',
     diagnostics['error'] = np.array(error)
 
     # Package up the learned encoder function for future use
-    my_encoder = functools.partial(parallel_encoder, 
+    my_encoder = functools.partial(_encoder, 
                                    D=D, 
                                    reg=regularize, 
                                    max_iter=max_admm_steps, 
