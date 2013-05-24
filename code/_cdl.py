@@ -5,7 +5,6 @@ CREATED:2013-03-01 08:19:26 by Brian McFee <brm2132@columbia.edu>
 """
 
 import functools
-import multiprocessing as mp
 
 import numpy as np
 import scipy.linalg
@@ -29,7 +28,6 @@ BETA        =   1e0         # decay factor for mini-batch learning
 #---                            ---#
 
 #--- Utility functions          ---#
-
 def patches_to_vectors(patches, pad_data=False):
     """Convert a stack of patches into their 2D fourier transforms.
 
@@ -277,50 +275,8 @@ def normalize_dictionary(D):
     """
     D = diags_to_columns(D)
     D = D / (np.sum(D**2, axis=0) ** 0.5)
-    D = columns_to_diags(D)
-    return D
-
-
-def pool(A, depth_h=0, depth_w=0, agg=np.sum, absval=True):
-    """Spatial pyramid pooling
-
-    Arguments:
-        A           -- (ndarray)    height-by-width activation patch
-        depth_h     -- (int>=0)     # vertical splits
-        depth_w     -- (int>=0)     # horizontal splits
-        agg         -- (function)   aggregator function
-        absval      -- (boolean)    apply abs() before pooling
-
-    Returns:
-        P           -- (ndarray)    vector of activation energy aggregated 
-                                    at multiple tree levels
-
-    Notes:
-        The dimensions of A are assumed to be powers of 2
-        Output vector has dimension 
-            ((2^(1+depth_h) - 1) * (2^(1+depth_w) - 1))
-    """
-
-    (height, width) = A.shape
-
-    if absval:
-        A = np.abs(A)
-
-    P = []
-    for h_level in range(1 + depth_h):
-        step_h = int(height * 2.0 **(-h_level))
-
-        for w_level in range(1 + depth_w):
-            step_w = int(width * 2.0 **(-w_level))
-
-            for u in range(0, height, step_h):
-                for v in range(0, width, step_w):
-                    P.append(agg(A[u:u+step_h, v:v+step_w]))
-
-    return np.array(P)
+    return columns_to_diags(D)
 #---                            ---#
-
-
 
 #--- Codebook initialization    ---#
 def init_columns(X, m):
@@ -338,16 +294,14 @@ def init_columns(X, m):
     Xsamp = None
 
     for cols in X:
-
         if Xsamp is None:
             Xsamp = cols
         else:
             Xsamp = np.hstack((Xsamp, cols))
-
         if Xsamp.shape[1] >= m:
             break
 
-    return normalize_dictionary(columns_to_diags(Xsamp[:,:m]))
+    return normalize_dictionary(columns_to_diags(Xsamp[:, :m]))
 #---                            ---#
 
 #--- Regularization functions   ---#
@@ -676,7 +630,7 @@ def _encoder(X, D, reg, max_iter=200, output_diagnostics=True):
 
                     reg = functools.partial(CDL.reg_l2_group, alpha=0.5, m=num_codewords)
 
-      max_iter  --  (int>0)     maximum number of steps     |default: 200
+      max_iter  --  (int>0)     maximum number of steps 
 
     Returns:
         A       --  (ndarray)   2dm-by-n activation matrix
@@ -795,88 +749,6 @@ def _encoder(X, D, reg, max_iter=200, output_diagnostics=True):
         return (Z, _DIAG)
     else:
         return Z
-
-
-def parallel_encoder(X, D, reg, n_jobs=1, 
-                                max_iter=100, 
-                                output_diagnostics=False):
-    """Parallel encoder
-
-    Arguments:
-      X         -- (ndarray)    2d-by-n data to be encoded
-      D         -- (sparse)     2d-by-2dm dictionary
-      reg       -- (function)   regularization function, eg:
-                    
-                    reg = functools.partial(CDL.reg_l2_group, alpha=0.5, m=num_codewords)
-
-      n_jobs -- (int>0)      number of parallel threads      | default: 4
-      max_iter  -- (int>0)      maximum number of steps         | default: 200
-
-    Returns:
-        A       -- (ndarray)    2dm-by-n activation matrix,  X ~= D*A
-
-    """
-    n   = X.shape[1]
-    dm  = D.shape[1]
-
-    step = n / n_jobs
-
-    # Punt to the local encoder if we're single-threaded or don't have enough 
-    # data to distrubute
-    if n_jobs == 1 or step == 0:
-        return _encoder(X, D, reg, 
-                         max_iter=max_iter, 
-                         output_diagnostics=output_diagnostics)
-
-    A   = np.empty( (dm, n), order='F')
-
-    def _consumer(input_queue, output_queue):
-        while not input_queue.empty():
-            (i, j) = input_queue.get(True, 1)
-
-            if output_diagnostics:
-                (a_ij, diag)   = _encoder(X[:, i:j], D, reg, 
-                                            max_iter=max_iter, 
-                                            output_diagnostics=True)
-            else:
-                a_ij = _encoder(X[:, i:j], D, reg, 
-                                max_iter=max_iter, 
-                                output_diagnostics=False)
-                diag = None
-
-            output_queue.put((i, j, a_ij, diag))
-
-        output_queue.close()
-        output_queue.join_thread()
-
-
-    input_queue    = mp.Queue()
-    output_queue   = mp.Queue()
-
-    # Build up the input queue
-    num_queue = 0
-    for i in xrange(0, n, step):
-        input_queue.put( (i, min(n, i + step)) )
-        num_queue += 1
-
-    # Launch encoders
-    for i in range(n_jobs):
-        mp.Process(target=_consumer, args=(input_queue, output_queue)).start()
-
-    # We're done writing
-    input_queue.close()
-
-    diagnostics = []
-    while num_queue > 0:
-        (i, j, a_ij, diags) = output_queue.get(True)
-        A[:, i:j]   = a_ij
-        diagnostics.append(diags)
-        num_queue   -= 1
-
-    if output_diagnostics:
-        return (A, diagnostics)
-    
-    return A
 #---                            ---#
 
 #--- Dictionary                 ---#
@@ -914,7 +786,7 @@ def _encoding_statistics(A, X):
     return (StS / n, StX / n)
 
 
-def dictionary(StS, StX, m, max_iter=200, Dinitial=None):
+def dictionary(StS, StX, m, max_iter=100, Dinitial=None):
     """Learn a dictionary from encoding statistics.
 
     Arguments:
@@ -1075,16 +947,16 @@ def learn_dictionary(X, m,  reg='l1_space',
     ###
     # Configure the encoding regularizer
     if reg == 'l2_group':
-        regularize  = functools.partial(    reg_l2_group,   alpha=alpha, m=m)
+        regularize  = functools.partial(reg_l2_group,   alpha=alpha, m=m)
 
     elif reg == 'l1':
-        regularize  = functools.partial(    reg_l1_complex, alpha=alpha)
+        regularize  = functools.partial(reg_l1_complex, alpha=alpha)
 
     elif reg == 'l1_space':
-        regularize  = functools.partial(    reg_l1_space,   alpha=alpha, **kwargs)
+        regularize  = functools.partial(reg_l1_space,   alpha=alpha, **kwargs)
 
     elif reg == 'lowpass':
-        regularize  = functools.partial(    reg_lowpass,    alpha=alpha, **kwargs)
+        regularize  = functools.partial(reg_lowpass,    alpha=alpha, **kwargs)
 
     else:
         raise ValueError('Unknown regularization: %s' % reg)

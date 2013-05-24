@@ -3,10 +3,12 @@
 # sklearn.decomposition container class for CDL 
 
 import numpy as np
-import _cdl
-from sklearn.base import BaseEstimator, TransformerMixin
 import functools
+import joblib
 import random
+from sklearn.base import BaseEstimator, TransformerMixin
+
+import _cdl
 
 class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
 
@@ -147,6 +149,7 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         D                = D.swapaxes(1,2).swapaxes(0,1)
         self.components_ = D
         self.encoder_    = encoder
+        self.diagnostics_= diagnostics
         return self
 
     def set_codebook(self, D):
@@ -180,8 +183,6 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
 
         # Fourier transform
         X_new = _cdl.patches_to_vectors(X, pad_data=self.pad_data)
-
-        # Convert complex2real2
 
         # Encode
         X_new = self.encoder_(X_new)
