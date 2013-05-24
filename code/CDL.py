@@ -167,52 +167,15 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
 
         return self
 
-    def _transform(self, X):
-        '''Encode the data as a sparse convolution of the dictionary atoms.
-
-        Parameters
-        ----------
-        X : array-like, shape (n_samples, n_features_y, n_features_x)
-
-        Returns
-        -------
-        X_new : array, shape (n_samples, n_atoms, n_features_y, n_features_x)
-        '''
-
-        # Swap axes
-        X = X.swapaxes(0, 1).swapaxes(1, 2)
-
-        h, w, n = X.shape
-
-        # Fourier transform
-        X_new = _cdl.patches_to_vectors(X, pad_data=self.pad_data)
-
-        # Encode
-        X_new = self.encoder_(X_new)
-        
-        X_new = _cdl.real2_to_complex(X_new)
-        X_new = X_new.reshape( (-1, X_new.shape[1] * self.n_atoms), order='F')
-        X_new = _cdl.complex_to_real2(X_new)   
-
-        X_new = _cdl.vectors_to_patches(X_new, w, 
-                            pad_data=self.pad_data, real=True)
-
-        X_new = X_new.reshape( (X_new.shape[0], X_new.shape[1], 
-                            self.n_atoms, n), order='F')
-
-        X_new = X_new.swapaxes(3, 0).swapaxes(3, 2).swapaxes(3, 1)
-
-        if self.nonneg:
-            X_new = np.maximum(X_new, 0.0)
-
-        return X_new
-
     def transform(self, X, chunk_size=512):
         '''Encode the data as a sparse convolution of the dictionary atoms.
 
         Parameters
         ----------
         X : array-like, shape (n_samples, n_features_y, n_features_x)
+
+        chunk_size : int
+            maximum number of examples to encode per job
 
         Returns
         -------
