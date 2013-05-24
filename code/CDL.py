@@ -1,16 +1,20 @@
 #!/usr/bin/env python
-# CREATED:2013-05-03 21:57:00 by Brian McFee <brm2132@columbia.edu>
-# sklearn.decomposition container class for CDL 
+'''sklearn.decomposition container class for Convolutional dictionary learning
+
+CREATED:2013-05-03 21:57:00 by Brian McFee <brm2132@columbia.edu>
+'''
 
 import numpy as np
 import functools
-import joblib
 import random
 from sklearn.base import BaseEstimator, TransformerMixin
 
+from joblib import Parallel, delayed
 import _cdl
 
+
 class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
+    '''Convolutional mini-batch dictionary learning'''
 
     def __init__(self, n_atoms, alpha=1, penalty='l1_space', nonneg=True, 
                                 pad_data=False, n_iter=100, 
@@ -68,7 +72,6 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         self.shuffle        = shuffle
         self.random_state   = random_state
         self.verbose        = verbose
-        pass
 
     def data_generator(self, X_full):
         '''Make a CDL data generator from an input array
@@ -105,7 +108,7 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
                 X = X_full[i:i+self.chunk_size]
 
                 # Swap the axes around
-                X = X.swapaxes(0,1).swapaxes(1,2)
+                X = X.swapaxes(0, 1).swapaxes(1, 2)
 
                 # X is now h-*-w-by-n
                 yield _cdl.patches_to_vectors(X, pad_data=self.pad_data)
@@ -144,19 +147,19 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
                                         **extra_args)
 
         self.fft_components_ = D
-        D                = _cdl.diags_to_columns(D)
-        D                = _cdl.vectors_to_patches(D, width, pad_data=self.pad_data)
-        D                = D.swapaxes(1,2).swapaxes(0,1)
-        self.components_ = D
-        self.encoder_    = encoder
-        self.diagnostics_= diagnostics
+        D                   = _cdl.diags_to_columns(D)
+        D                   = _cdl.vectors_to_patches(D, width, 
+                                    pad_data=self.pad_data)
+        self.components_    = D.swapaxes(1, 2).swapaxes(0, 1)
+        self.encoder_       = encoder
+        self.diagnostics_   = diagnostics
         return self
 
     def set_codebook(self, D):
         '''Clobber the existing codebook with a new one.'''
 
         self.components_ = D
-        D = D.swapaxes(0,1).swapaxes(1,2)
+        D = D.swapaxes(0, 1).swapaxes(1, 2)
         D = _cdl.patches_to_vectors(D, pad_data=self.pad_data)
         D = _cdl.columns_to_diags(D)
         self.fft_components_ = D
@@ -164,7 +167,7 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
 
         return self
 
-    def transform(self, X):
+    def _transform(self, X):
         '''Encode the data as a sparse convolution of the dictionary atoms.
 
         Parameters
@@ -177,7 +180,7 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         '''
 
         # Swap axes
-        X = X.swapaxes(0,1).swapaxes(1,2)
+        X = X.swapaxes(0, 1).swapaxes(1, 2)
 
         h, w, n = X.shape
 
@@ -191,12 +194,73 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         X_new = X_new.reshape( (-1, X_new.shape[1] * self.n_atoms), order='F')
         X_new = _cdl.complex_to_real2(X_new)   
 
-        X_new = _cdl.vectors_to_patches(X_new, w, pad_data=self.pad_data, real=True)
+        X_new = _cdl.vectors_to_patches(X_new, w, 
+                            pad_data=self.pad_data, real=True)
 
-        X_new = X_new.reshape( (X_new.shape[0], X_new.shape[1], self.n_atoms, n), order='F')
-        X_new = X_new.swapaxes(3,0).swapaxes(3,2).swapaxes(3,1)
+        X_new = X_new.reshape( (X_new.shape[0], X_new.shape[1], 
+                            self.n_atoms, n), order='F')
+
+        X_new = X_new.swapaxes(3, 0).swapaxes(3, 2).swapaxes(3, 1)
 
         if self.nonneg:
             X_new = np.maximum(X_new, 0.0)
 
         return X_new
+
+    def transform(self, X, chunk_size=512):
+        '''Encode the data as a sparse convolution of the dictionary atoms.
+
+        Parameters
+        ----------
+        X : array-like, shape (n_samples, n_features_y, n_features_x)
+
+        Returns
+        -------
+        X_new : array, shape (n_samples, n_atoms, n_features_y, n_features_x)
+        '''
+
+
+        def chunker(c):
+            '''Data chunk generator'''
+            n = X.shape[0]
+            c = min(n, c)
+            for i in range(0, n, c):
+                end = min(i + c, n)
+                yield X[i:end]
+
+        X_new = Parallel(n_jobs=self.n_jobs)(
+                    delayed(global_transform)(B, self.pad_data, self.encoder_,
+                    self.n_atoms, self.nonneg) for B in chunker(chunk_size)
+                )
+
+        return np.vstack(X_new)
+
+def global_transform(X_batch, pad_data, encoder_, n_atoms, nonneg):
+    X_batch = X_batch.swapaxes(0, 1).swapaxes(1, 2)
+
+    h, w, n = X_batch.shape
+
+    # Fourier transform
+    X_new = _cdl.patches_to_vectors(X_batch, pad_data=pad_data)
+
+    # Encode
+    X_new = encoder_(X_new)
+
+    X_new = _cdl.real2_to_complex(X_new)
+    X_new = X_new.reshape( (-1, X_new.shape[1] * n_atoms), order='F')
+    X_new = _cdl.complex_to_real2(X_new)   
+
+    X_new = _cdl.vectors_to_patches(X_new, w, 
+                                    pad_data=pad_data, 
+                                    real=True)
+
+    X_new = X_new.reshape( (X_new.shape[0], X_new.shape[1], 
+                                n_atoms, n), 
+                            order='F')
+
+    X_new = X_new.swapaxes(3, 0).swapaxes(3, 2).swapaxes(3, 1)
+
+    if nonneg:
+        X_new = np.maximum(X_new, 0.0)
+
+    return X_new
