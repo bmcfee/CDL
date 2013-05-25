@@ -279,12 +279,12 @@ Z \leftarrow \prox_{\rho^{-1}\Omega}(U) = \argmin_Z \frac{1}{\rho}\Omega(Z) + \f
 \]
 By applying Parseval's theorem, we can equivalently express this update in the time
 domain as
-\begin{align}
+\begin{align*}
 Z &\leftarrow \argmin_Z \frac{1}{\rho} \omega(\F^{-1}(Z)) +
 \frac{1}{2}\left\|\F^{-1}\{Z - U\}\right\|^2\notag\\
 &= \F\left\{\argmin_z \frac{1}{\rho} \omega(z) + \frac{1}{2} \|z - u\|^2
 \right\},\label{eq:time-regularize}
-\end{align}
+\end{align*}
 where the (inverse) Fourier transforms are taken to be applied independently to 
 each codeword sub-vector $Z_k$.  
 This motivates the following strategy for the $Z$-step:
@@ -292,7 +292,7 @@ This motivates the following strategy for the $Z$-step:
 Z^{t+1} \leftarrow \F\left\{ \prox_{\rho^{-1}\omega} \F^{-1}\left\{A^{t+1} + W^t
 \right\} \right\}.\label{eq:timeprox}
 \end{equation}
-That is, first convert the activations and residuals to the time domain, apply the
+That is, first convert $A^{t+1} + W^t$ to the time domain, apply the
 proximal mapping, and then transform the result back into the frequency domain.
 
 It is worth noting that \eqref{eq:timeprox} would incur significant cost if applied 
