@@ -6,12 +6,12 @@
 \usepackage{brian}
 \usepackage{booktabs}
 \usepackage{graphicx}
-\usepackage{microtype}
+% \usepackage{microtype}
 \usepackage[sort]{natbib}
 %\documentstyle[nips13submit_09,times,art10]{article} % For LaTeX 2.09
 
 
-\title{Efficient convolutional dictionary learning}
+\title{Efficient convolutional coding and dictionary learning}
 
 
 \author{
@@ -78,11 +78,10 @@ to $md$, we also desire that each activation function $a_k$ be sparse.  Formally
 achieved by solving the following optimization problem:
 \begin{align}
 a(x) &\defeq \argmin_{\{a_k\}} \frac{1}{2} \left\|x - \sum_{k=1}^m d_k * a_k\right\|^2 +
-\lambda \sum_{k=1}^m \omega(a_k), \label{eq:sisc}
+\omega(\{a_k\}), \label{eq:sisc}
 \end{align}
-where $\omega$ is a convex, sparsity-promoting regularization function (\eg, the 
-$\ell_1$-norm), and $\lambda > 0 $ is a parameter to balance regularization against 
-reconstruction accuracy. 
+where $\omega$ is a convex function subsuming any sparsity-promoting regularization 
+(\eg, the $\ell_1$-norm) or additional constraints (\eg, non-negativity of activations).
 
 Because convolution is a linear operation, \eqref{eq:sisc} is convex in $a_k$.  
 However, direct optimization is difficult.\bn{MORE}
@@ -90,7 +89,9 @@ However, direct optimization is difficult.\bn{MORE}
 \subsection{Coding in the frequency domain}
 By applying Parseval's theorem and the convolution theorem,\footnote{We assume circular
 convolutions throughout this article. However, linear convolutions can be accommodated
-in the usual way by appropriate padding and truncation.} we can equivalently express the 
+in the usual way by appropriate padding and truncation. Similarly, for simplicity, all 
+convolutions are assumed to be one-dimensional, but the formulation trivially
+generalizes to the multi-dimensional case.} we can equivalently express the 
 reconstruction term of \eqref{eq:sisc} in the frequency domain:\footnote{To ease
 presentation, we assume the symmetrically normalized form of the Fourier transform, 
 so that $\|x\| = \|\F\{x\}\|$. In general, a normalization constant may be included, 
@@ -124,7 +125,7 @@ A_m\trans\right]\trans \in \C^{dm}\\
 \end{proof}
 
 \Cref{lemma:hadamard} allows us to interchange the Hadamard product in
-\eqref{eq:fourier} with a matrix product, so that 
+\eqref{eq:fourier} with a dot-product, so that 
 $\left\|x - \sum_k d_k * a_k\right\|^2 =  \left\|X - \widehat{D}\vec{A}\right\|^2$,
 but we are left with a least-squares objective function parameterized by the complex-valued 
 vector $\vec{A}$. To facilitate the use of standard optimization techniques to solve for
@@ -143,8 +144,8 @@ convolutional coding as a least-squares problem:
 \end{equation}
 where $A_k$ corresponds to the sub-vector of $A$ associated with the $k$th codewode, and 
 $\Omega$ is a frequency-domain parameterization of the regularization function $\omega$.
-From an optimal $A$, each activation function $a_k$ can be 
-recovered by the inverse transform of the combined real and imaginary components
+Given an optimal $A$, each activation function $a_k$ can be 
+recovered by the inverse Fourier transform of the combined real and imaginary components
 corresponding to $A_k$.
 
 \subsection{ADMM solver}
@@ -176,6 +177,7 @@ convergence:
 \item $W^{t+1} \leftarrow W^t + A^{t+1} - Z^{t+1}$.
 \end{enumerate}
 
+\subsection*{A-step: efficient ridge regression}
 Just as in the ADMM formulation of LASSO~\cite[chapter 6]{boyd2011}, the $A$ update takes 
 the form of a ridge regression.  Setting the gradient to zero yields the update
 equation:
@@ -204,10 +206,20 @@ matrix of diagonals formed from the columns of $u$ as in \cref{lemma:hadamard}
 (and analogously for $v$).  Then $\widehat{u}\widehat{v}\trans = I \circ (uv\trans)$.
 \label{lemma:product}
 \end{lemma}
+\begin{proof}
+$\widehat{u}$ and $\widehat{v}$ share the same sparsity pattern.  Moreover, for any
+distinct pair of rows $i, k$, we must have that $\widehat{u}_i \widehat{v}_k\trans = 0$, 
+so the product $\widehat{u}\widehat{v}\trans$ is diagonal.  Finally, along the diagonal, 
+we have
+\[
+{\left[\widehat{u}\widehat{v}\trans\right]}_{ii} = \sum_k \widehat{u}_{ik}
+\widehat{v}_{ik} = \sum_{k} u_{ik} v_{ik} = {\left[uv\trans\right]}_{ii}.
+\]
+\end{proof}
 
 \begin{theorem}
 Let $\widehat{D} \in \R^{2d\times 2dm}$ be as defined in \eqref{eq:realized}.  Then
-$\widehat{D}\widehat{D}\trans \in \R^{2d\times 2d}$ is diagonal.
+$\widehat{D}\widehat{D}\trans \in \R^{2d\times 2d}$ is diagonal.\label{thm:diagonal}
 \end{theorem}
 \begin{proof}
 Let $U$ and $V$ denote the blocks of $\widehat{D}$ corresponding to the
@@ -220,21 +232,28 @@ UV\trans & UU\trans + VV\trans\end{array} \right]\\
 &= \left[\begin{array}{rr}UU\trans + VV\trans & 0 \\ 0 & UU\trans + VV\trans\end{array}
 \right],
 \end{align*}
-where the last equality follows by symmetry of $\widehat{D}\widehat{D}\trans$, so that
-$UV\trans = VU\trans$.  By \cref{lemma:product}, both $UU\trans$ and $VV\trans$ are 
+where the last equality follows by symmetry of $\widehat{D}\widehat{D}\trans$, which
+implies $UV\trans = VU\trans$.  By \cref{lemma:product}, both $UU\trans$ and $VV\trans$ are 
 diagonal, as is their sum.  So $\widehat{D}\widehat{D}\trans$ is diagonal as well.
 \end{proof}
 
 
-\subsection{Z-step: time-domain regularization}
+As a consequence of \Cref{thm:diagonal}, the $A$ update simplifies to a diagonal matrix
+inversion, which can be computed in linear time, followed by sparse matrix
+multiplications.  This contrasts with the analogous result for general ridge regression, 
+where the matrix inversion lemma can reduce complexity to quadratic, not linear, in the 
+smaller dimension. 
+Moreover, the precise form of $\widehat{D}\widehat{D}\trans$ can be interpreted in 
+\eqref{eq:inversion} as normalizing each frequency component by the total power
+(magnitude-squared) contained in that frequency across all codewords.
+
+\subsection*{Z-step: regularization in the time-domain}
 
 
 \section{Dictionary learning}
 
 \section{Experiments}
 \section{Conclusion}
-\appendix
-\section{Deferred proofs from \Cref{sec:solver}}
 
 \bibliographystyle{plain}
 \bibliography{refs}
