@@ -15,13 +15,17 @@
 
 
 \author{
-David S.~Hippocampus\thanks{ Use footnote for providing further information
-about author (webpage, alternative address)---\emph{not} for acknowledging
-funding agencies.} \\
-Department of Computer Science\\
-Cranberry-Lemon University\\
-Pittsburgh, PA 15213 \\
-\texttt{hippo@cs.cranberry-lemon.edu}
+Brian McFee\\
+Center for Jazz Studies\\
+Columbia University\\
+New York, NY 10027 \\
+\texttt{brm2132@columbia.edu}
+\And
+Daniel P.W. Ellis\\
+Department of Electrical Engineering\\
+Columbia University\\
+New York, NY 10027\\
+\texttt{dpwe@columbia.edu}
 }
 
 % The \author macro works with any number of authors. There are two commands
@@ -32,7 +36,7 @@ Pittsburgh, PA 15213 \\
 % puts 3 of 4 authors names on the first line, and the last on the second
 % line, try using \AND instead of \And before the third author name.
 
-%\nipsfinalcopy % Uncomment for camera-ready version
+% \nipsfinalcopy % Uncomment for camera-ready version
 
 \begin{document}
 
@@ -62,20 +66,20 @@ $\F:\R^d\rightarrow\C^d$ will denote the discrete Fourier transform, and $*$ wil
 convolution.
 Time-domain signals will be represented by lower-case letters, \eg, $x \in \R^d$, while
 frequency-domain representations will be denoted by capitals, $\F\{x\} = X \in \C^d$.
-For a vector $u$, $\diag(u)$ will denote the square, diagonal matrix $U$ such that 
-$U_{ii} = u_i$.
+For a vector $u$, $\diag(u)$ will denote the square, diagonal matrix such that 
+${\diag(u)}_{ii} = u_i$.
 
 \section{Convolutional coding}
 \label{sec:convcode}
 Given a set of $m$ codewords ${\{d_k\}}_{k=1}^m \subset \R^d$ and a signal $x\in\R^d$, 
-we would like to find a set of activation functions ${\{a_k\}}_{k=1}^m\subset\R^d$ which
+we seek a set of activation functions ${\{a_k\}}_{k=1}^m\subset\R^d$ which
 can be used to reconstruct $x$ by convolving with the codewords:
 \begin{align}
 x &\approx \sum_{k=1}^m d_k * a_k.\label{eq:convapprox}
 \end{align}
 Because this parameterization increases the dimensionality of the representation from $d$ 
-to $md$, we also desire that each activation function $a_k$ be sparse.  Formally, this is 
-achieved by solving the following optimization problem:
+to $md$, we also desire that each activation function $a_k$ be sparse.  
+Formally, this is accomplished by solving the following optimization problem:
 \begin{align}
 a(x) &\defeq \argmin_{\{a_k\}} \frac{1}{2} \left\|x - \sum_{k=1}^m d_k * a_k\right\|^2 +
 \omega(\{a_k\}), \label{eq:sisc}
@@ -94,8 +98,8 @@ convolutions are assumed to be one-dimensional, but the formulation trivially
 generalizes to the multi-dimensional case.} we can equivalently express the 
 reconstruction term of \eqref{eq:sisc} in the frequency domain:\footnote{To ease
 presentation, we assume the symmetrically normalized form of the Fourier transform, 
-so that $\|x\| = \|\F\{x\}\|$. In general, a normalization constant may be included, 
-or absorbed into the regularization parameter $\lambda$.}
+so that $\|x\| = \|\F\{x\}\|$. In general, a normalization constant may be included
+explicitly, or absorbed into the regularization term $\omega$.}
 \begin{align}
 \left\|x - \sum_k d_k * a_k\right\|^2 &= \left\|\F\left\{x - \sum_k d_k *
 a_k\right\}\right\|^2
@@ -137,12 +141,12 @@ X \mapsto \left[\begin{array}{r}\Re X \\ \Im X\end{array}\right] \in \R^{2d},
 \quad\quad \vec{A} \mapsto \left[\begin{array}{r}\Re \vec{A} \\ \Im \vec{A}\end{array}\right]
 \in \R^{2dm}.\label{eq:realized}
 \end{equation}
-With a slight abuse of notation, we can equivalently solve the original sparse
-convolutional coding as a least-squares problem:
+With a slight abuse of notation, we can equivalently express the original sparse
+convolutional coding problem as
 \begin{equation}
 \min_{A \in \R^{2dm}} \|X - \widehat{D}A\|^2 + \Omega(A),\label{eq:realvalued}
 \end{equation}
-where $A_k$ corresponds to the sub-vector of $A$ associated with the $k$th codewode, and 
+where $A_k$ corresponds to the sub-vector of $A$ associated with the $k$th codeword, and 
 $\Omega$ is a frequency-domain parameterization of the regularization function $\omega$.
 Given an optimal $A$, each activation function $a_k$ can be 
 recovered by the inverse Fourier transform of the combined real and imaginary components
@@ -177,9 +181,9 @@ convergence:
 \item $W^{t+1} \leftarrow W^t + A^{t+1} - Z^{t+1}$.
 \end{enumerate}
 
-\subsection*{A-step: efficient ridge regression}
-Just as in the ADMM formulation of LASSO~\cite[chapter 6]{boyd2011}, the $A$ update takes 
-the form of a ridge regression.  Setting the gradient to zero yields the update
+\subsection{A-step: efficient ridge regression}
+Just as in the ADMM formulation of LASSO~\cite[chapter 6.4]{boyd2011}, the $A$ update 
+takes the form of a ridge regression.  Setting the gradient to zero yields the update
 equation:
 \begin{align}
 \zero = \nabla_A \Ell_\rho(A, Z^t, W^t) &= -\widehat{D}\trans \left(X - \widehat{D}A\right)
@@ -195,15 +199,15 @@ Applying the matrix inversion lemma yields
 {\left(I + \rho^{-1} \widehat{D}\widehat{D}\trans \right)}^{-1}
 \widehat{D}.\label{eq:inversion}
 \end{equation}
-This alternative formulation superficially allows us to invert a $2d\times 2d$
-matrix rather than the original $2dm\times 2dm$ matrix.  However, to see the full
+This alternative formulation superficially reduces complexity to $2d\times 2d$
+from the original $2dm\times 2dm$ matrix.  However, to see the full
 benefits of this formulation, we will require the following results.
 
 \begin{lemma}
-Let ${u, v \in \R^{d\times m}}$ be any matrices, and let ${\widehat{u} \defeq
+Let ${u, v \in \R^{d\times m}}$, and let ${\widehat{u} \defeq
 [\diag(u_1),\dots,\diag(u_m)] \in \R^{d\times dm}}$ denote the 
 matrix of diagonals formed from the columns of $u$ as in \cref{lemma:hadamard} 
-(and analogously for $v$).  Then $\widehat{u}\widehat{v}\trans = I \circ (uv\trans)$.
+(and analogously for $v$).  Then ${\widehat{u}\widehat{v}\trans = I \circ (uv\trans)}$.
 \label{lemma:product}
 \end{lemma}
 \begin{proof}
@@ -224,14 +228,14 @@ $\widehat{D}\widehat{D}\trans \in \R^{2d\times 2d}$ is diagonal.\label{thm:diago
 \begin{proof}
 Let $U$ and $V$ denote the blocks of $\widehat{D}$ corresponding to the
 real and imaginary components.  Then,
-\begin{align*}
+\begin{align}
 \widehat{D}\widehat{D}\trans = \left[\begin{array}{rr}U & -V\\ V & U\end{array}\right]
 \left[\begin{array}{rr} U\trans & V\trans\\ -V\trans & U\trans\end{array}\right]
 &= \left[\begin{array}{rr} UU\trans + VV\trans & UV\trans - VU\trans \\ VU\trans -
-UV\trans & UU\trans + VV\trans\end{array} \right]\\
+UV\trans & UU\trans + VV\trans\end{array} \right]\notag\\
 &= \left[\begin{array}{rr}UU\trans + VV\trans & 0 \\ 0 & UU\trans + VV\trans\end{array}
-\right],
-\end{align*}
+\right],\label{eq:dictpower}
+\end{align}
 where the last equality follows by symmetry of $\widehat{D}\widehat{D}\trans$, which
 implies $UV\trans = VU\trans$.  By \cref{lemma:product}, both $UU\trans$ and $VV\trans$ are 
 diagonal, as is their sum.  So $\widehat{D}\widehat{D}\trans$ is diagonal as well.
@@ -239,15 +243,63 @@ diagonal, as is their sum.  So $\widehat{D}\widehat{D}\trans$ is diagonal as wel
 
 
 As a consequence of \Cref{thm:diagonal}, the $A$ update simplifies to a diagonal matrix
-inversion, which can be computed in linear time, followed by sparse matrix
-multiplications.  This contrasts with the analogous result for general ridge regression, 
-where the matrix inversion lemma can reduce complexity to quadratic, not linear, in the 
-smaller dimension. 
-Moreover, the precise form of $\widehat{D}\widehat{D}\trans$ can be interpreted in 
-\eqref{eq:inversion} as normalizing each frequency component by the total power
-(magnitude-squared) contained in that frequency across all codewords.
+inversion, which can be computed in linear time --- $\Oh(d)$ to invert, $\Oh(dm)$
+including the initial sum across all codewords, which can be pre-computed and 
+cached --- followed by sparse matrix multiplications.
+This contrasts with the analogous result for general ridge regression problems, where the 
+matrix inversion lemma can reduce complexity to quadratic, not linear, in the smaller 
+dimension. 
+Additionally, the precise form of $\widehat{D}\widehat{D}\trans$ in \eqref{eq:dictpower} 
+carries an intuitive interpretation in \eqref{eq:inversion} as normalizing each frequency 
+bin by the total power (magnitude-squared) contained in that frequency across all 
+codewords.
 
-\subsection*{Z-step: regularization in the time-domain}
+
+\subsection{Z-step: regularization in the time domain}
+The $Z$ update is achieved by applying the proximal mapping of the (scaled) 
+regularization function $\rho^{-1}\Omega$ to $A^{t+1} + W^t$.  
+Given a convex function $\omega$ in the time domain, we generally define its
+frequency-domain counterpart as 
+$\Omega(A) \defeq \omega\left(\left\{\F^{-1}\{A_k\}\right\}\right)$.  By linearity of
+$\F^{-1}$, $\Omega$ is convex in $A$, though not necessarily convenient to work with.
+
+As a concrete example, consider the commonly used $\ell_1$ regularization:
+\[
+\omega(\{a_k\}) \defeq \lambda \sum_k \|a_k\|_1
+\quad \Rightarrow \quad
+\Omega(A) = \lambda \sum_k \| \F^{-1} \left\{ A_k \right\} \|_1,
+\]
+where $\lambda>0$ is a user-specified parameter which controls the balance between
+sparsity of the solution and accuracy of the reconstruction.  While $\omega$ has a
+well-known proximal mapping via soft-thresholding, the case for $\Omega$ is less clear.
+
+More generally, we seek a solution to the following problem for some vector $U$:
+\[
+Z \leftarrow \prox_{\rho^{-1}\Omega}(U) = \argmin_Z \frac{1}{\rho}\Omega(Z) + \frac{1}{2} \| Z - U\|^2.
+\]
+By applying Parseval's theorem, we can equivalently express this update in the time
+domain as
+\begin{align}
+Z &\leftarrow \argmin_Z \frac{1}{\rho} \omega(\F^{-1}(Z)) +
+\frac{1}{2}\left\|\F^{-1}\{Z - U\}\right\|^2\notag\\
+&= \F\left\{\argmin_z \frac{1}{\rho} \omega(z) + \frac{1}{2} \|z - u\|^2
+\right\},\label{eq:time-regularize}
+\end{align}
+where the (inverse) Fourier transforms are taken to be applied independently to 
+each codeword sub-vector $Z_k$.  
+This motivates the following strategy for the $Z$-step:
+\begin{equation}
+Z^{t+1} \leftarrow \F\left\{ \prox_{\rho^{-1}\omega} \F^{-1}\left\{A^{t+1} + W^t
+\right\} \right\}.\label{eq:timeprox}
+\end{equation}
+That is, first convert the activations and residuals to the time domain, apply the
+proximal mapping, and then transform the result back into the frequency domain.
+
+It is worth noting that \eqref{eq:timeprox} would incur significant cost if applied 
+in a proximal or projected gradient descent solver: two additional Fourier transforms 
+for each activation function at each step.  However, in the ADMM setting, these updates 
+happen much less frequently, and in practice, typically a few dozen updates suffice to 
+reach acceptable precision.
 
 
 \section{Dictionary learning}
