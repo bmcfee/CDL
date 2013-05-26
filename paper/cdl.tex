@@ -69,7 +69,7 @@ Time-domain signals will be represented by lower-case letters, \eg, $x \in \R^d$
 frequency-domain representations will be denoted by capitals, $\F\{x\} = X \in \C^d$.
 For a vector $u$, $\diag(u)$ will denote the square, diagonal matrix such that 
 ${\diag(u)}_{ii} = u_i$.  Unless otherwise stated, $\|\cdot\|$ will indicate the
-$\ell_2$-norm.
+$\ell_2$-norm.  The imaginary unit will be denoted by $j \defeq \sqrt{-1}$.
 
 \section{Convolutional coding}
 \label{sec:convcode}
@@ -152,7 +152,11 @@ where $A_k$ corresponds to the sub-vector of $A$ associated with the $k$th codew
 $\Omega$ is a frequency-domain parameterization of the regularization function $\omega$.
 Given an optimal $A$, each activation function $a_k$ can be 
 recovered by the inverse Fourier transform of the combined real and imaginary components
-corresponding to $A_k$.
+corresponding to $A_k$:
+\begin{equation}
+a_k \leftarrow \F^{-1} \left\{ {\left[[I,\; jI]A \right]}_k
+\right\}.\label{eq:complexify}
+\end{equation}
 
 \subsection{ADMM solver}
 \label{sec:solver}
@@ -206,9 +210,9 @@ Now, observe that the inverted matrix is the sum of a $2dm\times 2dm$ diagonal m
 $\rho I$ and product of low-rank matrices $(\widehat{D}\trans\widehat{D})$.  
 Applying the matrix inversion lemma yields
 \begin{equation}
-{\left(\widehat{D}\trans \widehat{D} + \rho I\right)}^{-1} = \rho^{-1} I - \rho^{-2} \widehat{D}\trans
-{\left(I + \rho^{-1} \widehat{D}\widehat{D}\trans \right)}^{-1}
-\widehat{D}.\label{eq:inversion}
+{\left(\widehat{D}\trans \widehat{D} + \rho I\right)}^{-1} = \frac{1}{\rho}\left( I -  \widehat{D}\trans
+{\left(\widehat{D}\widehat{D}\trans  + \rho I \right)}^{-1}
+\widehat{D}\right).\label{eq:inversion}
 \end{equation}
 This alternative formulation superficially reduces complexity to $2d\times 2d$
 from the original $2dm\times 2dm$ matrix.  However, to see the full
@@ -227,8 +231,8 @@ By construction, any distinct pair of rows $i \neq k$ are mutually orthogonal:
 $\widehat{u}_i \widehat{v}_k\trans = 0$, so the product $\widehat{u}\widehat{v}\trans$ 
 is diagonal.  Finally, along the diagonal, we have
 \[
-{\left[\widehat{u}\widehat{v}\trans\right]}_{ii} = \sum_k \widehat{u}_{ik}
-\widehat{v}_{ik} = \sum_{k} u_{ik} v_{ik} = {\left[uv\trans\right]}_{ii}.
+{\left[\widehat{u}\widehat{v}\trans\right]}_{ii} = \sum_\ell \widehat{u}_{i\ell}
+\widehat{v}_{i\ell} = \sum_{k} u_{ik} v_{ik} = {\left[uv\trans\right]}_{ii}.
 \]
 \end{proof}
 
@@ -282,9 +286,16 @@ As a concrete example, consider the commonly used $\ell_1$ regularization:
 \Omega(A) = \lambda \sum_k \| \F^{-1} \left\{ A_k \right\} \|_1,
 \]
 where $\lambda>0$ is a user-specified parameter which controls the balance between
-sparsity of the solution and accuracy of the reconstruction.  While $\omega$ has a
-well-known and easily computable proximal mapping via soft-thresholding, the case 
-for $\Omega$ is less clear.
+sparsity of the solution and accuracy of the reconstruction.  In this case, $\omega$ has a
+well-known and easily computable proximal mapping via coordinate-wise soft-thresholding:
+\[
+{\left[\prox_{\rho^{-1} \omega}(z)\right]}_i = {\left[S_{\lambda/\rho}(z)\right]}_i \defeq \begin{cases}
+z_i - \lambda / \rho & z_i \geq \lambda / \rho\\
+z_i + \lambda / \rho & z_i \leq -\lambda / \rho\\
+0 & \text{otherwise}
+\end{cases},
+\]
+but the case for $\Omega$ is less clear.
 
 More generally, we seek a solution to the following problem for some vector $U$:
 \[
@@ -314,10 +325,33 @@ for each activation function at each step.  However, in the ADMM setting, these 
 happen much less frequently, and in practice, typically a few dozen updates suffice to 
 reach acceptable precision.
 
+\begin{algorithm}[t]
+\caption{ADMM Shift-invariant sparse coding\label{alg:sisc}}
+\begin{algorithmic}[1]
+\REQUIRE{Signal $x \in \R^d$, codewords $\{d_1, d_2, \dots, d_m\} \subset \R^d$,
+sparsity penalty $\lambda > 0$}
+\ENSURE{Activations $\{a_1, a_2, \dots, a_m\} \subset \R^d$}
+\STATE{Compute $X$ and $\widehat{D}$ via \eqref{eq:realized}}
+\COMMENT{represent signals in the frequency domain}
+\STATE{Initialize $A \leftarrow 0, \quad Z \leftarrow 0, \quad W \leftarrow 0$}
+\STATE{Let $R = {\left(\widehat{D}\trans\widehat{D} + \rho I\right)}^{-1}$}
+\COMMENT{compute efficiently by \Cref{thm:diagonal}}
+\REPEAT{}
+    \STATE{$A \leftarrow R \left(\widehat{D}\trans X + \rho (Z - W)\right)$}
+    \COMMENT{update activations}
+    \STATE{$Z \leftarrow \F\left\{S_{\lambda/\rho} \left( \F^{-1}\left\{A + W\right\}
+    \right) \right\}$} \COMMENT{time-domain soft-thresholding}
+    \STATE{$W \leftarrow W + A - Z$} \COMMENT{update residual vector}
+    \STATE{(optional) Update $\rho$ and recompute $R$}
+\UNTIL{convergence}
+\RETURN{$a_k$} \COMMENT{compute by \eqref{eq:complexify}}
+\end{algorithmic}
+\end{algorithm}
 
 \section{Dictionary learning}
 
 \section{Experiments}
+
 \section{Conclusion}
 
 \bibliographystyle{plain}
