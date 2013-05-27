@@ -15,15 +15,16 @@ import scipy.weave
 #--- magic numbers              ---#
 #  it is of utmost importance that these numbers be floats
 
-RHO_INIT_A  =   2e-3        # Initial value for rho (encoder)
-RHO_INIT_D  =   2e-1        # Initial value for rho (dictionary)
 RHO_MIN     =   1e-6        # Minimum allowed scale for augmenting term rho
 RHO_MAX     =   1e6         # Maximum allowed scale for rho
+RHO_INIT_A  =   1e-1        # Initial value for rho (encoder)
+RHO_INIT_D  =   1e-3        # Initial value for rho (dictionary)
 ABSTOL      =   1e-4        # absolute tolerance for convergence criteria
 RELTOL      =   1e-3        # relative tolerance
 MU          =   1e1         # maximum ratio between primal and dual residuals
 TAU         =   2e0         # scaling for rho when primal/dual exceeds MU
-T_CHECKUP   =   5           # number of steps between convergence tests
+A_CHECKUP   =   1          # number of steps between convergence tests
+D_CHECKUP   =   5          # number of steps between convergence tests
 BETA        =   1e0         # decay factor for mini-batch learning
 #---                            ---#
 
@@ -262,19 +263,23 @@ def vector_to_columns(AB, m):
 
     return np.vstack( (A, B) )
 
-def normalize_dictionary(D):
+def normalize_dictionary(D, R=1.0):
     """Normalize a dictionary to have all unit-length bases.
 
     Arguments:
         D       -- (sparse) 2d-by-2dm diagonal-block dictionary
                             See: columns_to_diags()
 
+        R       -- (float>0) target radius
+
     Returns:
-        Dhat    -- (sparse) D with each codeword normalized to unit length
+        Dhat    -- (sparse) D with each codeword normalized to length R
 
     """
     D = diags_to_columns(D)
-    D = D / (np.sum(D**2, axis=0) ** 0.5)
+    Z = np.sum(D**2, axis=0) ** 0.5
+#     Z = Z + (Z < 1e-10)
+    D = D * R / Z
     return columns_to_diags(D)
 #---                            ---#
 
@@ -293,6 +298,7 @@ def init_columns(X, m):
 
     Xsamp = None
 
+
     for cols in X:
         if Xsamp is None:
             Xsamp = cols
@@ -301,7 +307,10 @@ def init_columns(X, m):
         if Xsamp.shape[1] >= m:
             break
 
-    return normalize_dictionary(columns_to_diags(Xsamp[:, :m]))
+    # Target norm for each column
+    R = (Xsamp.shape[0] / 2)**0.5
+
+    return normalize_dictionary(columns_to_diags(Xsamp[:, :m]), R)
 #---                            ---#
 
 #--- Regularization functions   ---#
@@ -586,15 +595,16 @@ def reg_lowpass(A, rho, alpha, height=None, width=None, Xout=None):
 
     return Xout
 
-def proj_l2_ball(X, m):
+def proj_l2_ball(X, m, R=1.0):
     """Project a vectorized matrix onto the unit l2 ball
     
     Arguments:  
       X     -- (ndarray)  2*d*m-by-1 vector of real+imaginary codewords
       m     -- (int>0)    number of codewords
+      R     -- (float>0)  ball radius
 
     Output:
-      Xhat  -- (ndarray)  Each sub-vector of X is projected onto the unit l2 ball
+      Xhat  -- (ndarray)  Each sub-vector of X is projected onto the R-l2 ball
 
     """
     d2m     = X.shape[0]
@@ -606,8 +616,10 @@ def proj_l2_ball(X, m):
     # Group by codewords
     Z = np.empty(m)
     for k in xrange(m):
-        Z[k] = max(1.0, np.sum(Xnorm[k*d:(k+1)*d])**0.5)
+        Z[k] = np.sum(Xnorm[k*d:(k+1)*d])**0.5
     
+    Z[Z <= R] = 1.0
+
     # Repeat and tile each norm
     Z       = np.tile(np.repeat(Z, d), (1, 2)).flatten()
 
@@ -698,7 +710,7 @@ def _encoder(X, D, reg, max_iter=200, output_diagnostics=True):
         O       = O + A - Z
 
         #   only compute the rest of this loop every T_CHECKUP iterations 
-        if t % T_CHECKUP != 0:
+        if t % A_CHECKUP != 0:
             continue
     
         #  compute stopping criteria
@@ -786,7 +798,7 @@ def _encoding_statistics(A, X):
     return (StS / n, StX / n)
 
 
-def dictionary(StS, StX, m, max_iter=100, Dinitial=None):
+def dictionary(StS, StX, m, max_iter=500, Dinitial=None):
     """Learn a dictionary from encoding statistics.
 
     Arguments:
@@ -794,8 +806,8 @@ def dictionary(StS, StX, m, max_iter=100, Dinitial=None):
       StX       --  (ndarray)   matrix is activation-data interactions
 
       m         --  (int>0)     size of the dictionary
-      max_iter  --  (int>0)     maximum number of steps         | default: 200
-      Dinitial  --  (ndarray)   2dm-by-1 initial dictionary     | default: None
+      max_iter  --  (int>0)     maximum number of steps
+      Dinitial  --  (ndarray)   2dm-by-1 initial dictionary 
     
     Returns D:
       D         --  (sparse)    2d-by-2dm diagonal-block dictionary
@@ -803,6 +815,9 @@ def dictionary(StS, StX, m, max_iter=100, Dinitial=None):
     Note: StS and StX are produced by _encoding_statistics()
     """
     d2m     = StX.shape[0]
+
+    # Ball constraint for each codeword
+    R       = (d2m / (2 * m)) ** 0.5
 
     # Initialize ADMM variables
     rho     = RHO_INIT_D
@@ -838,13 +853,13 @@ def dictionary(StS, StX, m, max_iter=100, Dinitial=None):
 
         # Project each basis element onto the l2 ball
         Eold    = E
-        E       = proj_l2_ball(D + W, m)
+        E       = proj_l2_ball(D + W, m, R)
 
         # Update the residual
         W       = W + D - E
 
         #   only compute the rest of this loop every T_CHECKUP iterations
-        if t % T_CHECKUP != 0:
+        if t % D_CHECKUP != 0:
             continue
 
         #  compute stopping criteria
@@ -898,7 +913,7 @@ def dictionary(StS, StX, m, max_iter=100, Dinitial=None):
 def learn_dictionary(X, m,  reg='l1_space', 
                             alpha=1e-1, 
                             max_steps=20, 
-                            max_admm_steps=100, 
+                            max_admm_steps=500, 
                             verbose=False,
                             **kwargs):
     """Alternating minimization to learn a convolutional dictionary
@@ -988,7 +1003,8 @@ def learn_dictionary(X, m,  reg='l1_space',
             'rel_tol':      RELTOL,
             'mu':           MU,
             'tau':          TAU,
-            't_checkup':    T_CHECKUP
+            'a_checkup':    A_CHECKUP,
+            'd_checkup':    D_CHECKUP
         }
     }
 
@@ -1023,7 +1039,7 @@ def learn_dictionary(X, m,  reg='l1_space',
             StS     = gamma * StS     + (1.0-gamma) * StS_new
             StX     = gamma * StX     + (1.0-gamma) * StX_new
 
-        ###
+        ##
         # Optimize the dictionary
         (D, D_diags)  = dictionary(StS, StX, m, 
                                    max_iter=max_admm_steps, 
@@ -1037,7 +1053,7 @@ def learn_dictionary(X, m,  reg='l1_space',
             print '\t| [A-D] %.3e' % (error[-2] - error[-1])
 
         # Rescale the dictionary: this can only help
-        D = normalize_dictionary(D)
+#         D = normalize_dictionary(D, (D.shape[0]/2)**0.5)
 
         if T >= max_steps:
             break
