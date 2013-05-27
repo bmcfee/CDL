@@ -245,8 +245,8 @@ real and imaginary components.  Then,
 \begin{align}
 \widehat{D}\widehat{D}\trans = \left[\begin{array}{rr}U & -V\\ V & U\end{array}\right]
 \left[\begin{array}{rr} U\trans & V\trans\\ -V\trans & U\trans\end{array}\right]
-&= \left[\begin{array}{rr} UU\trans + VV\trans & UV\trans - VU\trans \\ VU\trans -
-UV\trans & UU\trans + VV\trans\end{array} \right]\notag\\
+% &= \left[\begin{array}{rr} UU\trans + VV\trans & UV\trans - VU\trans \\ VU\trans -
+% UV\trans & UU\trans + VV\trans\end{array} \right]\notag\\
 &= \left[\begin{array}{rr}UU\trans + VV\trans & 0 \\ 0 & UU\trans + VV\trans\end{array}
 \right],\label{eq:dictpower}
 \end{align}
@@ -457,8 +457,8 @@ sparsity structure of each $\widehat{A}^i$, the resulting sum also exhibits a hi
 regular sparsity structure, as noted below.
 
 \begin{proposition}
-Let ${\left\{\widehat{A}^i\right\}}_{i=1}^n \subset \R^{2d \times 2dm}$ of the form 
-in~\eqref{eq:realized-dict}.  Then there exists a permutation matrix $\Pi$ such that 
+Let $\left\{\widehat{A}^i\right\}$ be of the form in~\eqref{eq:realized-dict}.  
+Then there exists a permutation matrix $\Pi$ such that 
 $\Pi\left(\sum_i \left(\widehat{A}^i\right)\trans \widehat{A}^i \right)\Pi\trans$ 
 is block-diagonal with blocks of size $2m\times 2m$.\label{prop:permute}
 \end{proposition}
@@ -479,12 +479,13 @@ dictionary-learning algorithm is listed as \Cref{alg:dict}.
 \begin{algorithmic}[1]
 \REQUIRE{Data ${\{x_i\}} \subset \R^d$, activations ${\{a^i_k\}} \subset \R^{d\times m}$}
 \ENSURE{Codewords ${\{d_k\}}_{k=1}^m \subset \R^d$}
-\STATE{Compute $X^i, \widehat{A}^i$ via \eqref{eq:realized-dict}}
+\STATE{Compute $X^i$ and $\widehat{A}^i$ via \eqref{eq:realized-dict}}
 \COMMENT{transform to frequency domain}
 
 \STATE{$S \leftarrow \frac{1}{n} \sum_{i=1}^n \left(\widehat{A}^i\right)\trans \widehat{A}^i$}
 \COMMENT{cache data-codeword interactions}
 \STATE{$Y \leftarrow \frac{1}{n} \sum_{i=1}^n \left(\widehat{A}^i\right)\trans X_i$}
+\STATE{Initialize $E \leftarrow 0,\quad F\leftarrow 0$}
 \REPEAT{}
     \STATE{$D \leftarrow {\left(\rho I + S \right)}^{-1} \left(Y + \rho(E - F) \right)$}
     \COMMENT{update codewords}
