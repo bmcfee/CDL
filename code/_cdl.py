@@ -18,13 +18,13 @@ import scipy.weave
 RHO_MIN     =   1e-6        # Minimum allowed scale for augmenting term rho
 RHO_MAX     =   1e6         # Maximum allowed scale for rho
 RHO_INIT_A  =   1e-1        # Initial value for rho (encoder)
-RHO_INIT_D  =   1e-3        # Initial value for rho (dictionary)
+RHO_INIT_D  =   1e-1        # Initial value for rho (dictionary)
 ABSTOL      =   1e-4        # absolute tolerance for convergence criteria
 RELTOL      =   1e-3        # relative tolerance
 MU          =   1e1         # maximum ratio between primal and dual residuals
 TAU         =   2e0         # scaling for rho when primal/dual exceeds MU
 A_CHECKUP   =   1          # number of steps between convergence tests
-D_CHECKUP   =   5          # number of steps between convergence tests
+D_CHECKUP   =   1          # number of steps between convergence tests
 BETA        =   1e0         # decay factor for mini-batch learning
 #---                            ---#
 
@@ -616,9 +616,7 @@ def proj_l2_ball(X, m, R=1.0):
     # Group by codewords
     Z = np.empty(m)
     for k in xrange(m):
-        Z[k] = np.sum(Xnorm[k*d:(k+1)*d])**0.5
-    
-    Z[Z <= R] = 1.0
+        Z[k] = max(1.0, np.sum(Xnorm[k*d:(k+1)*d])**0.5 / R)
 
     # Repeat and tile each norm
     Z       = np.tile(np.repeat(Z, d), (1, 2)).flatten()
@@ -1051,9 +1049,6 @@ def learn_dictionary(X, m,  reg='l1_space',
         if verbose:
             print '\t| [D] MSE=%.3e' %  error[-1],
             print '\t| [A-D] %.3e' % (error[-2] - error[-1])
-
-        # Rescale the dictionary: this can only help
-#         D = normalize_dictionary(D, (D.shape[0]/2)**0.5)
 
         if T >= max_steps:
             break
