@@ -913,6 +913,7 @@ def learn_dictionary(X, m,  reg='l1_space',
                             max_steps=20, 
                             max_admm_steps=500, 
                             verbose=False,
+                            D=None,
                             **kwargs):
     """Alternating minimization to learn a convolutional dictionary
 
@@ -932,6 +933,7 @@ def learn_dictionary(X, m,  reg='l1_space',
       max_steps     -- (int>0)  number of alternating minimization steps
       max_admm_steps-- (int>0)  number of steps for the internal optimizer
       verbose       -- (bool)   show training progress
+      D             -- (sparse) 2d-by-2dm  Initial codebook
 
       **kwargs      --  Additional keyword arguments to regularizers:
 
@@ -977,7 +979,8 @@ def learn_dictionary(X, m,  reg='l1_space',
 
     ###
     # Initialize the dictionary
-    D = init_columns(X, m)
+    if D is None:
+        D = init_columns(X, m)
     
     # Reset the diagnostics output
     diagnostics   = {
