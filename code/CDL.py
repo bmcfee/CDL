@@ -16,10 +16,11 @@ import _cdl
 class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
     '''Convolutional mini-batch dictionary learning'''
 
-    def __init__(self, n_atoms, alpha=1, penalty='l1_space', nonneg=True, 
-                                pad_data=False, n_iter=100, 
-                                n_jobs=1, chunk_size=32, shuffle=True,
-                                random_state=None, verbose=False):
+    def __init__(self,  n_atoms=None, D=None,
+                        alpha=1, penalty='l1_space', nonneg=True, 
+                        pad_data=False, n_iter=100, 
+                        n_jobs=1, chunk_size=32, shuffle=True,
+                        random_state=None, verbose=False):
         '''Mini-batch convolutional dictionary learning.
 
         (D, A) = argmin 0.5 sum || X^i - sum_k D^i_k (*) A^i_k||^2 + alpha * g(A^i_k)
@@ -29,6 +30,9 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         ---------
         n_atoms : int    
             Number of dictionary elements to extract
+
+        D : array, (n_atoms * width * height)
+            Initial dictionary (optional)
 
         alpha : float  
             Regularization penalty
@@ -72,6 +76,13 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         self.shuffle        = shuffle
         self.random_state   = random_state
         self.verbose        = verbose
+
+        if D is not None:
+            self.n_atoms = D.shape[0]
+            self.set_codebook(D)
+        else:
+            self.fft_components_ = None
+
 
     def data_generator(self, X_full):
         '''Make a CDL data generator from an input array
@@ -144,6 +155,7 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
                                         alpha       = self.alpha,
                                         max_steps   = self.n_iter,
                                         verbose     = self.verbose,
+                                        D           = self.fft_components_,
                                         **extra_args)
 
         self.fft_components_ = D
@@ -156,15 +168,32 @@ class ConvolutionalDictionaryLearning(BaseEstimator, TransformerMixin):
         return self
 
     def set_codebook(self, D):
-        '''Clobber the existing codebook with a new one.'''
+        '''Clobber the existing codebook and encoder with a new one.'''
 
         self.components_ = D
+
+        extra_args = {}
+        if self.penalty == 'l1_space':
+            extra_args['height']    = D.shape[1]
+            extra_args['width']     = D.shape[2]
+            extra_args['pad_data']  = self.pad_data
+            extra_args['nonneg']    = self.nonneg
+
         D = D.swapaxes(0, 1).swapaxes(1, 2)
         D = _cdl.patches_to_vectors(D, pad_data=self.pad_data)
         D = _cdl.columns_to_diags(D)
         self.fft_components_ = D
-        self.encoder_ = functools.partial(self.encoder_, D=D)
 
+        encoder, D, diagnostics = _cdl.learn_dictionary(
+                                        [],
+                                        self.n_atoms,
+                                        reg         = self.penalty,
+                                        alpha       = self.alpha,
+                                        max_steps   = 0,
+                                        verbose     = False,
+                                        D           = D, 
+                                        **extra_args)
+        self.encoder_ = encoder
         return self
 
     def transform(self, X, chunk_size=512):

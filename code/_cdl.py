@@ -17,8 +17,8 @@ import scipy.weave
 
 RHO_MIN     =   1e-6        # Minimum allowed scale for augmenting term rho
 RHO_MAX     =   1e6         # Maximum allowed scale for rho
-RHO_INIT_A  =   1e-1        # Initial value for rho (encoder)
-RHO_INIT_D  =   1e-1        # Initial value for rho (dictionary)
+RHO_INIT_A  =   1e0        # Initial value for rho (encoder)
+RHO_INIT_D  =   1e0        # Initial value for rho (dictionary)
 ABSTOL      =   1e-4        # absolute tolerance for convergence criteria
 RELTOL      =   1e-3        # relative tolerance
 MU          =   1e1         # maximum ratio between primal and dual residuals
